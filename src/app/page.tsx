@@ -1,56 +1,32 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { 
-  GitPullRequest, 
-  Target, 
-  Bot, 
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Clock,
-  ChevronRight,
-  Send,
-  Copy,
   RefreshCw,
   Menu,
-  X
+  X,
+  Settings,
+  Zap,
+  GitPullRequest
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { mockPRs, mockGoals, mockAlerts, mockAgents, mockStats } from '@/lib/mock-data';
-import { useState } from 'react';
+import { cn } from '../lib/utils';
+import { FileBrowser } from '../components/FileBrowser';
+import { GoalsTracker } from '../components/GoalsTracker';
+import { SubAgentsPanel } from '../components/SubAgentsPanel';
+import { PRQueue } from '../components/PRQueue';
+import { useGatewayStream } from '../hooks/useGatewayStream';
 
-// Status badge component
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; text: string; label: string }> = {
-    passing: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'Passing' },
-    failed: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'Failed' },
-    pending: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: 'Pending' },
-    approved: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'Approved' },
-    changes_requested: { bg: 'bg-orange-500/20', text: 'text-orange-400', label: 'Changes' },
-  };
-  const c = config[status] || { bg: 'bg-gray-500/20', text: 'text-gray-400', label: status };
-  return (
-    <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', c.bg, c.text)}>
-      {c.label}
-    </span>
-  );
-}
-
-// Owner badge
-function OwnerBadge({ owner }: { owner: string }) {
-  const config: Record<string, { bg: string; emoji: string }> = {
-    dustin: { bg: 'bg-purple-500/20 text-purple-400', emoji: '👤' },
-    rocket: { bg: 'bg-blue-500/20 text-blue-400', emoji: '🚀' },
-    jules: { bg: 'bg-pink-500/20 text-pink-400', emoji: '🤖' },
-    gemini: { bg: 'bg-cyan-500/20 text-cyan-400', emoji: '✨' },
-    ci: { bg: 'bg-yellow-500/20 text-yellow-400', emoji: '⏳' },
-  };
-  const c = config[owner] || { bg: 'bg-gray-500/20 text-gray-400', emoji: '❓' };
-  return (
-    <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', c.bg)}>
-      {c.emoji} {owner}
-    </span>
-  );
+// Alert data (will be computed from real sources)
+interface Alert {
+  id: string;
+  level: 'red' | 'yellow' | 'green';
+  title: string;
+  description: string;
+  action: string;
+  link?: string;
 }
 
 // Alert level indicator
@@ -65,91 +41,8 @@ function AlertLevel({ level }: { level: string }) {
   );
 }
 
-// Card component
-function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn('bg-card border border-border rounded-lg', className)}>
-      {children}
-    </div>
-  );
-}
-
-// PR Row component
-function PRRow({ pr }: { pr: typeof mockPRs[0] }) {
-  return (
-    <div className="flex items-center gap-3 p-3 hover:bg-accent/50 rounded-lg transition-colors group">
-      {/* CI Status Icon */}
-      <div className="flex-shrink-0">
-        {pr.ci === 'passing' && <CheckCircle2 className="w-5 h-5 text-green-400" />}
-        {pr.ci === 'failed' && <XCircle className="w-5 h-5 text-red-400" />}
-        {pr.ci === 'pending' && <Clock className="w-5 h-5 text-yellow-400 animate-pulse" />}
-      </div>
-      
-      {/* PR Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">#{pr.id}</span>
-          <span className="text-sm text-muted-foreground truncate">{pr.title}</span>
-        </div>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          <span className="text-xs text-muted-foreground">→ {pr.target}</span>
-          {pr.unresolvedComments > 0 && (
-            <span className="text-xs text-orange-400">💬 {pr.unresolvedComments} unresolved</span>
-          )}
-        </div>
-      </div>
-      
-      {/* Status & Owner */}
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <StatusBadge status={pr.reviewState} />
-        <OwnerBadge owner={pr.owner} />
-      </div>
-      
-      {/* Actions (visible on hover/mobile) */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="p-1.5 hover:bg-primary/20 rounded" title="Kick to Rocket">
-          <Send className="w-4 h-4 text-primary" />
-        </button>
-        <button className="p-1.5 hover:bg-muted rounded" title="Copy summary">
-          <Copy className="w-4 h-4 text-muted-foreground" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Goal Row component
-function GoalRow({ goal }: { goal: typeof mockGoals[0] }) {
-  return (
-    <div className="p-3 hover:bg-accent/50 rounded-lg transition-colors">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-muted-foreground">{goal.id}</span>
-          <span className="text-sm font-medium">{goal.title}</span>
-        </div>
-        <OwnerBadge owner={goal.owner} />
-      </div>
-      
-      {/* Progress bar */}
-      <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
-        <div 
-          className="h-full bg-primary rounded-full transition-all"
-          style={{ width: `${goal.progress}%` }}
-        />
-      </div>
-      
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{goal.progress}% complete</span>
-        {goal.blockers.length > 0 && (
-          <span className="text-orange-400">⚠️ {goal.blockers[0]}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // Alert Row component  
-function AlertRow({ alert }: { alert: typeof mockAlerts[0] }) {
+function AlertRow({ alert }: { alert: Alert }) {
   return (
     <div className="flex items-start gap-3 p-3 hover:bg-accent/50 rounded-lg transition-colors">
       <AlertLevel level={alert.level} />
@@ -157,22 +50,40 @@ function AlertRow({ alert }: { alert: typeof mockAlerts[0] }) {
         <div className="text-sm font-medium">{alert.title}</div>
         <div className="text-xs text-muted-foreground mt-0.5">{alert.description}</div>
       </div>
-      <button className="text-xs text-primary hover:underline flex-shrink-0">
-        {alert.action}
-      </button>
+      {alert.link ? (
+        <a 
+          href={alert.link} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-xs text-primary hover:underline flex-shrink-0"
+        >
+          {alert.action}
+        </a>
+      ) : (
+        <button className="text-xs text-primary hover:underline flex-shrink-0">
+          {alert.action}
+        </button>
+      )}
     </div>
   );
 }
 
 // Stats card
-function StatCard({ label, value, icon: Icon, trend }: { 
+function StatCard({ label, value, icon: Icon, trend, onClick }: { 
   label: string; 
   value: number | string; 
-  icon: any;
+  icon: React.ElementType;
   trend?: 'up' | 'down' | 'neutral';
+  onClick?: () => void;
 }) {
   return (
-    <div className="bg-card border border-border rounded-lg p-4">
+    <button 
+      onClick={onClick}
+      className={cn(
+        'bg-card border border-border rounded-lg p-4 text-left transition-colors',
+        onClick && 'hover:border-primary/50 cursor-pointer'
+      )}
+    >
       <div className="flex items-center justify-between">
         <Icon className="w-5 h-5 text-muted-foreground" />
         <span className={cn(
@@ -184,19 +95,66 @@ function StatCard({ label, value, icon: Icon, trend }: {
         </span>
       </div>
       <div className="text-xs text-muted-foreground mt-2">{label}</div>
+    </button>
+  );
+}
+
+// Quick command bar
+function QuickCommand() {
+  const [command, setCommand] = useState('');
+  
+  async function handleCommand(cmd: string) {
+    console.log('Execute command:', cmd);
+    // TODO: Send to session or execute action
+    setCommand('');
+  }
+  
+  return (
+    <div className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-2">
+      <Zap className="w-4 h-4 text-primary" />
+      <input
+        type="text"
+        placeholder="Quick command... (e.g., 'check PR 266', 'spawn research agent')"
+        className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        value={command}
+        onChange={(e) => setCommand(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && command.trim()) {
+            handleCommand(command.trim());
+          }
+        }}
+      />
     </div>
   );
 }
 
 export default function MissionControl() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'prs' | 'goals' | 'alerts'>('prs');
+  const [activeTab, setActiveTab] = useState<'files' | 'prs' | 'goals'>('goals');
+  const [alerts, setAlerts] = useState<Alert[]>([
+    { id: '1', level: 'green', title: 'ShipLog deployed', description: 'api.shiplog.io is live', action: 'Check', link: 'https://api.shiplog.io' },
+  ]);
+
+  // Gateway connection for real-time updates
+  const { connected, connecting, error: gatewayError } = useGatewayStream({
+    onEvent: (event) => {
+      console.log('[Gateway Event]', event);
+    },
+  });
+
+  // Stats (will be computed from real data)
+  const [stats, setStats] = useState({
+    prsOpen: 0,
+    prsReadyToMerge: 0,
+    prsBlocked: 0,
+    agentsActive: 0,
+  });
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background text-foreground pb-12">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-xl">🚀</span>
             <h1 className="font-bold text-lg">Mission Control</h1>
@@ -205,11 +163,16 @@ export default function MissionControl() {
           {/* System Status */}
           <div className="hidden md:flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              <span className="text-sm text-muted-foreground">All Systems Nominal</span>
+              <div className={cn(
+                'w-2 h-2 rounded-full',
+                connected ? 'bg-green-500' : connecting ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'
+              )} />
+              <span className="text-sm text-muted-foreground">
+                {connected ? 'Live' : connecting ? 'Connecting...' : 'Offline'}
+              </span>
             </div>
-            <button className="p-2 hover:bg-accent rounded-lg">
-              <RefreshCw className="w-4 h-4" />
+            <button className="p-2 hover:bg-accent rounded-lg" title="Settings">
+              <Settings className="w-4 h-4" />
             </button>
           </div>
           
@@ -223,18 +186,23 @@ export default function MissionControl() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="max-w-[1600px] mx-auto px-4 py-4">
+        {/* Quick Command Bar */}
+        <div className="mb-4">
+          <QuickCommand />
+        </div>
+
         {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          <StatCard label="PRs Open" value={mockStats.prsOpen} icon={GitPullRequest} />
-          <StatCard label="Ready to Merge" value={mockStats.prsReadyToMerge} icon={CheckCircle2} trend="up" />
-          <StatCard label="Blocked" value={mockStats.prsBlocked} icon={XCircle} trend="down" />
-          <StatCard label="Goals Active" value={mockStats.goalsActive} icon={Target} />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <StatCard label="PRs Open" value={stats.prsOpen || '—'} icon={GitPullRequest} />
+          <StatCard label="Ready to Merge" value={stats.prsReadyToMerge || '—'} icon={CheckCircle2} trend={stats.prsReadyToMerge > 0 ? 'up' : undefined} />
+          <StatCard label="Blocked" value={stats.prsBlocked || '—'} icon={XCircle} trend={stats.prsBlocked > 0 ? 'down' : undefined} />
+          <StatCard label="Agents Active" value={stats.agentsActive || '—'} icon={Zap} />
         </div>
 
         {/* Mobile Tab Selector */}
         <div className="md:hidden flex gap-2 mb-4 overflow-x-auto pb-2">
-          {(['prs', 'goals', 'alerts'] as const).map((tab) => (
+          {(['goals', 'files', 'prs'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -245,107 +213,76 @@ export default function MissionControl() {
                   : 'bg-accent text-muted-foreground'
               )}
             >
+              {tab === 'files' && '📁 Files'}
               {tab === 'prs' && '📋 PRs'}
               {tab === 'goals' && '🎯 Goals'}
-              {tab === 'alerts' && '🚨 Alerts'}
             </button>
           ))}
         </div>
 
-        {/* Main Grid */}
-        <div className="grid md:grid-cols-3 gap-6">
-          {/* PR Queue */}
-          <Card className={cn(
-            'md:col-span-2',
+        {/* Main 3-Column Grid */}
+        <div className="grid md:grid-cols-12 gap-4">
+          {/* Left Column: Files */}
+          <div className={cn(
+            'md:col-span-3',
+            activeTab !== 'files' && 'hidden md:block'
+          )}>
+            <FileBrowser className="h-[600px]" />
+          </div>
+
+          {/* Center Column: Goals + Sub-Agents */}
+          <div className={cn(
+            'md:col-span-5 space-y-4',
+            activeTab !== 'goals' && 'hidden md:block'
+          )}>
+            <GoalsTracker />
+            <SubAgentsPanel />
+          </div>
+
+          {/* Right Column: PRs + Alerts */}
+          <div className={cn(
+            'md:col-span-4 space-y-4',
             activeTab !== 'prs' && 'hidden md:block'
           )}>
-            <div className="p-4 border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <GitPullRequest className="w-5 h-5 text-primary" />
-                <h2 className="font-semibold">PR Queue</h2>
-                <span className="text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
-                  {mockPRs.length}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <select className="text-xs bg-accent border border-border rounded px-2 py-1">
-                  <option>All PRs</option>
-                  <option>My PRs</option>
-                  <option>Needs Action</option>
-                  <option>Blocked</option>
-                </select>
-              </div>
-            </div>
-            <div className="p-2 max-h-[500px] overflow-y-auto">
-              {mockPRs.map((pr) => (
-                <PRRow key={pr.id} pr={pr} />
-              ))}
-            </div>
-          </Card>
+            <PRQueue />
 
-          {/* Right Column */}
-          <div className="space-y-6">
             {/* Alerts */}
-            <Card className={cn(activeTab !== 'alerts' && 'hidden md:block')}>
-              <div className="p-4 border-b border-border flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-orange-400" />
-                <h2 className="font-semibold">Alerts</h2>
-                {mockAlerts.filter(a => a.level === 'red').length > 0 && (
-                  <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">
-                    {mockAlerts.filter(a => a.level === 'red').length} critical
-                  </span>
-                )}
+            {alerts.length > 0 && (
+              <div className="bg-card border border-border rounded-lg overflow-hidden">
+                <div className="p-3 border-b border-border flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-orange-400" />
+                  <h2 className="font-semibold">Alerts</h2>
+                </div>
+                <div className="p-2">
+                  {alerts.map((alert) => (
+                    <AlertRow key={alert.id} alert={alert} />
+                  ))}
+                </div>
               </div>
-              <div className="p-2">
-                {mockAlerts.map((alert) => (
-                  <AlertRow key={alert.id} alert={alert} />
-                ))}
-              </div>
-            </Card>
-
-            {/* Goals */}
-            <Card className={cn(activeTab !== 'goals' && 'hidden md:block')}>
-              <div className="p-4 border-b border-border flex items-center gap-2">
-                <Target className="w-5 h-5 text-primary" />
-                <h2 className="font-semibold">Active Goals</h2>
-              </div>
-              <div className="p-2">
-                {mockGoals.map((goal) => (
-                  <GoalRow key={goal.id} goal={goal} />
-                ))}
-              </div>
-            </Card>
-
-            {/* Agents */}
-            <Card>
-              <div className="p-4 border-b border-border flex items-center gap-2">
-                <Bot className="w-5 h-5 text-primary" />
-                <h2 className="font-semibold">Sub-Agents</h2>
-                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
-                  {mockAgents.filter(a => a.status === 'completed').length} completed
-                </span>
-              </div>
-              <div className="p-3">
-                {mockAgents.length === 0 ? (
-                  <div className="text-sm text-muted-foreground text-center py-4">
-                    No active agents
-                  </div>
-                ) : (
-                  mockAgents.map((agent) => (
-                    <div key={agent.id} className="flex items-center justify-between text-sm">
-                      <div>
-                        <div className="font-medium">{agent.id}</div>
-                        <div className="text-xs text-muted-foreground">{agent.task}</div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{agent.completedAt}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
+            )}
           </div>
         </div>
       </main>
+
+      {/* Footer Status Bar */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-card border-t border-border px-4 py-2">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center gap-4">
+            <span className={cn(
+              connected ? 'text-green-400' : 'text-gray-400'
+            )}>
+              {connected ? '🟢' : '⚪'} Gateway: localhost:18789
+            </span>
+            <span>📁 /home/node/.openclaw/workspace</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span>Last sync: just now</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
+
+// Force dynamic rendering (uses hooks)
+export const dynamic = 'force-dynamic';
