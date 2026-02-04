@@ -171,10 +171,38 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
     return () => clearInterval(interval);
   }, [repo]);
 
-  function handleKick(pr: PR) {
-    // TODO: Send to Rocket session
-    console.log('Kick PR to Rocket:', pr);
-    alert(`Would kick PR #${pr.id} to Rocket for review/fix`);
+  async function handleKick(pr: PR) {
+    const message = `[Mission Control] PR #${pr.id} needs attention:
+- Title: ${pr.title}
+- CI: ${pr.ci}
+- Review: ${pr.reviewState}
+- Unresolved comments: ${pr.unresolvedComments}
+- Owner: ${pr.owner}
+- URL: ${pr.url || `https://github.com/neg-0/comp-iq/pull/${pr.id}`}
+
+Please review and take action.`;
+
+    try {
+      const res = await fetch('/api/kick', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message,
+          context: { type: 'pr', prId: pr.id, repo }
+        }),
+      });
+      
+      const result = await res.json();
+      
+      if (result.success) {
+        alert(`Sent PR #${pr.id} to Rocket! ${result.mode === 'dry-run' ? '(dry run - hooks not configured)' : ''}`);
+      } else {
+        alert(`Failed to send: ${result.error}`);
+      }
+    } catch (e) {
+      console.error('Kick error:', e);
+      alert('Failed to send to Rocket');
+    }
   }
 
   // Filter PRs
