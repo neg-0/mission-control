@@ -4,7 +4,7 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-const WORKSPACE_ROOT = process.env.OPENCLAW_WORKSPACE || '/home/node/.openclaw/workspace';
+const WORKSPACE_ROOT = process.env.WORKSPACE_PATH || '/home/node/.openclaw/workspace';
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
