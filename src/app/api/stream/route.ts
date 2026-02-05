@@ -1,6 +1,9 @@
 import { NextRequest } from 'next/server';
 import WebSocket from 'ws';
 
+// Force Node.js runtime (not Edge) - ws package requires it
+export const runtime = 'nodejs';
+
 // Gateway connection configuration
 // Support both http(s):// and ws(s):// URLs
 const rawGatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
