@@ -271,7 +271,7 @@ export default function MissionControl() {
             <span className={cn(
               connected ? 'text-green-400' : 'text-gray-400'
             )}>
-              {connected ? '🟢' : '⚪'} Gateway: localhost:18789
+              {connected ? '🟢' : '⚪'} Gateway: {connected ? 'Connected' : 'Disconnected'}
             </span>
             <span>📁 /home/node/.openclaw/workspace</span>
           </div>

@@ -2,7 +2,11 @@ import { NextRequest } from 'next/server';
 import WebSocket from 'ws';
 
 // Gateway connection configuration
-const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
+// Support both http(s):// and ws(s):// URLs
+const rawGatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
+const GATEWAY_URL = rawGatewayUrl
+  .replace(/^https:\/\//, 'wss://')
+  .replace(/^http:\/\//, 'ws://');
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
 
 interface GatewayMessage {
