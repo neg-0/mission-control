@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import WebSocket from 'ws';
 
-// Force Node.js runtime (not Edge) - ws package requires it
+// Force Node.js runtime (not Edge)
 export const runtime = 'nodejs';
 
 // Gateway connection configuration
@@ -42,11 +41,26 @@ export async function GET(request: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       }
 
+      async function readMessageText(data: unknown) {
+        if (typeof data === 'string') return data;
+        if (data instanceof ArrayBuffer) return Buffer.from(data).toString();
+        if (ArrayBuffer.isView(data)) {
+          return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString();
+        }
+        if (typeof Blob !== 'undefined' && data instanceof Blob) {
+          return await data.text();
+        }
+        if (data && typeof (data as { text?: () => Promise<string> }).text === 'function') {
+          return await (data as { text: () => Promise<string> }).text();
+        }
+        return String(data ?? '');
+      }
+
       function connect() {
         try {
           ws = new WebSocket(GATEWAY_URL);
 
-          ws.on('open', () => {
+          ws.addEventListener('open', () => {
             console.log('[SSE Bridge] Connected to gateway');
             // Send connect handshake
             const connectMsg: GatewayMessage = {
@@ -69,44 +83,47 @@ export async function GET(request: NextRequest) {
             ws?.send(JSON.stringify(connectMsg));
           });
 
-          ws.on('message', (rawData: WebSocket.RawData) => {
-            try {
-              const msg: GatewayMessage = JSON.parse(rawData.toString());
-              
-              if (msg.type === 'res' && !connected) {
-                // Check for successful connect
-                const payload = msg.payload as { type?: string } | undefined;
-                if (msg.ok && payload?.type === 'hello-ok') {
-                  connected = true;
-                  sendEvent('connected', { gateway: GATEWAY_URL });
-                  
-                  // Start ping interval to keep connection alive
-                  pingInterval = setInterval(() => {
-                    sendEvent('ping', { ts: Date.now() });
-                  }, 15000);
-                } else if (!msg.ok) {
-                  sendEvent('error', { message: 'Gateway connection failed', error: msg.error });
+          ws.addEventListener('message', (event) => {
+            void (async () => {
+              try {
+                const text = await readMessageText(event.data);
+                const msg: GatewayMessage = JSON.parse(text);
+
+                if (msg.type === 'res' && !connected) {
+                  // Check for successful connect
+                  const payload = msg.payload as { type?: string } | undefined;
+                  if (msg.ok && payload?.type === 'hello-ok') {
+                    connected = true;
+                    sendEvent('connected', { gateway: GATEWAY_URL });
+
+                    // Start ping interval to keep connection alive
+                    pingInterval = setInterval(() => {
+                      sendEvent('ping', { ts: Date.now() });
+                    }, 15000);
+                  } else if (!msg.ok) {
+                    sendEvent('error', { message: 'Gateway connection failed', error: msg.error });
+                  }
+                } else if (msg.type === 'event') {
+                  // Forward all gateway events to the browser
+                  sendEvent(msg.event || 'unknown', msg.payload);
                 }
-              } else if (msg.type === 'event') {
-                // Forward all gateway events to the browser
-                sendEvent(msg.event || 'unknown', msg.payload);
+              } catch (e) {
+                console.error('[SSE Bridge] Failed to parse message:', e);
               }
-            } catch (e) {
-              console.error('[SSE Bridge] Failed to parse message:', e);
-            }
+            })();
           });
 
-          ws.on('close', () => {
+          ws.addEventListener('close', () => {
             console.log('[SSE Bridge] Disconnected from gateway');
             connected = false;
-            
+
             // Don't reconnect or send events if already closed
             if (closed || request.signal.aborted) {
               return;
             }
-            
+
             sendEvent('disconnected', {});
-            
+
             // Attempt reconnect after 5 seconds
             setTimeout(() => {
               if (!closed && !request.signal.aborted) {
@@ -115,10 +132,14 @@ export async function GET(request: NextRequest) {
             }, 5000);
           });
 
-          ws.on('error', (err: Error) => {
-            console.error('[SSE Bridge] WebSocket error:', err.message);
+          ws.addEventListener('error', (event) => {
+            const message =
+              typeof (event as { message?: string }).message === 'string'
+                ? (event as { message: string }).message
+                : 'WebSocket error';
+            console.error('[SSE Bridge] WebSocket error:', message);
             if (!closed) {
-              sendEvent('error', { message: err.message });
+              sendEvent('error', { message });
             }
           });
         } catch (e) {
