@@ -172,32 +172,31 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
   }, [repo]);
 
   async function handleKick(pr: PR) {
-    const message = `[Mission Control] PR #${pr.id} needs attention:
-- Title: ${pr.title}
-- CI: ${pr.ci}
-- Review: ${pr.reviewState}
-- Unresolved comments: ${pr.unresolvedComments}
-- Owner: ${pr.owner}
-- URL: ${pr.url || `https://github.com/neg-0/comp-iq/pull/${pr.id}`}
+    const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || process.env.NEXT_PUBLIC_OPENCLAW_GATEWAY_URL;
+    const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN || process.env.NEXT_PUBLIC_OPENCLAW_HOOKS_TOKEN;
 
-Please review and take action.`;
+    if (!gatewayUrl || !hooksToken) {
+      alert('OpenClaw hooks not configured. Set OPENCLAW_GATEWAY_URL and OPENCLAW_HOOKS_TOKEN.');
+      return;
+    }
+
+    const message = `Please review and fix PR #${pr.id} on repo ${repo}: ${pr.title}`;
 
     try {
-      const res = await fetch('/api/kick', {
+      const res = await fetch(`${gatewayUrl}/hooks/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          message,
-          context: { type: 'pr', prId: pr.id, repo }
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${hooksToken}`,
+        },
+        body: JSON.stringify({ text: message }),
       });
-      
-      const result = await res.json();
-      
-      if (result.success) {
-        alert(`Sent PR #${pr.id} to Rocket! ${result.mode === 'dry-run' ? '(dry run - hooks not configured)' : ''}`);
+
+      if (res.ok) {
+        alert(`Sent PR #${pr.id} to Rocket!`);
       } else {
-        alert(`Failed to send: ${result.error}`);
+        const errorText = await res.text();
+        alert(`Failed to send: ${errorText || res.statusText}`);
       }
     } catch (e) {
       console.error('Kick error:', e);

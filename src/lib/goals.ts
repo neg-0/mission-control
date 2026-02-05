@@ -42,10 +42,12 @@ export function parseGoals(content: string): Goal[] {
     
     // Extract details
     const ownerMatch = goalContent.match(/\*\*Owner:\*\* (.+)/);
+    const createdMatch = goalContent.match(/\*\*Created:\*\* (.+)/);
+    const completedMatch = goalContent.match(/\*\*Completed:\*\* (.+)/);
     const progressMatch = goalContent.match(/- \[x\]/gi);
     const totalMatch = goalContent.match(/- \[[ x]\]/gi);
-    
-    const progress = totalMatch 
+
+    const progress = totalMatch
       ? Math.round((progressMatch?.length || 0) / totalMatch.length * 100)
       : status === '🟢' ? 100 : 0;
 
@@ -66,6 +68,8 @@ export function parseGoals(content: string): Goal[] {
       progress,
       owner: ownerMatch?.[1] || 'Rocket',
       blockers,
+      created: createdMatch?.[1],
+      completed: completedMatch?.[1],
       priority: priority++,
     });
   }

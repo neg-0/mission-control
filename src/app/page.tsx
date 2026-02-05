@@ -18,16 +18,8 @@ import { GoalsTracker } from '../components/GoalsTracker';
 import { SubAgentsPanel } from '../components/SubAgentsPanel';
 import { PRQueue } from '../components/PRQueue';
 import { useGatewayStream } from '../hooks/useGatewayStream';
-
-// Alert data (will be computed from real sources)
-interface Alert {
-  id: string;
-  level: 'red' | 'yellow' | 'green';
-  title: string;
-  description: string;
-  action: string;
-  link?: string;
-}
+import { computeAlerts, Alert } from '../lib/alerts';
+import { parseGoals } from '../lib/goals';
 
 // Alert level indicator
 function AlertLevel({ level }: { level: string }) {
@@ -47,23 +39,9 @@ function AlertRow({ alert }: { alert: Alert }) {
     <div className="flex items-start gap-3 p-3 hover:bg-accent/50 rounded-lg transition-colors">
       <AlertLevel level={alert.level} />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium">{alert.title}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{alert.description}</div>
+        <div className="text-sm font-medium">{alert.message}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">Source: {alert.source}</div>
       </div>
-      {alert.link ? (
-        <a 
-          href={alert.link} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-xs text-primary hover:underline flex-shrink-0"
-        >
-          {alert.action}
-        </a>
-      ) : (
-        <button className="text-xs text-primary hover:underline flex-shrink-0">
-          {alert.action}
-        </button>
-      )}
     </div>
   );
 }
@@ -131,9 +109,7 @@ function QuickCommand() {
 export default function MissionControl() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'files' | 'prs' | 'goals'>('goals');
-  const [alerts, setAlerts] = useState<Alert[]>([
-    { id: '1', level: 'green', title: 'ShipLog deployed', description: 'api.shiplog.io is live', action: 'Check', link: 'https://api.shiplog.io' },
-  ]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   // Gateway connection for real-time updates
   const { connected, connecting, error: gatewayError } = useGatewayStream({
@@ -142,13 +118,60 @@ export default function MissionControl() {
     },
   });
 
-  // Stats (will be computed from real data)
+  // Stats (computed from real data)
   const [stats, setStats] = useState({
     prsOpen: 0,
     prsReadyToMerge: 0,
     prsBlocked: 0,
     agentsActive: 0,
   });
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchAlerts() {
+      try {
+        const [prsRes, goalsRes, agentsRes] = await Promise.all([
+          fetch('/api/github/prs?repo=neg-0/comp-iq'),
+          fetch('/api/files/read?path=GOALS.md'),
+          fetch('/api/sessions'),
+        ]);
+
+        const prsData = prsRes.ok ? await prsRes.json() : { prs: [] };
+        const goalsData = goalsRes.ok ? await goalsRes.json() : { content: '' };
+        const agentsData = agentsRes.ok ? await agentsRes.json() : { sessions: [] };
+
+        const prs = prsData.prs || [];
+        const goals = parseGoals(goalsData.content || '');
+        const agents = (agentsData.sessions || []).map((session: { sessionKey: string; status: string; lastActivityMs?: number; label?: string }) => ({
+          id: session.sessionKey,
+          status: session.status === 'active' ? 'running' : (session.status as 'running' | 'completed' | 'failed' | 'idle'),
+          lastActivityMs: session.lastActivityMs,
+          label: session.label,
+        }));
+
+        if (!mounted) return;
+
+        setAlerts(computeAlerts(prs, goals, agents));
+        setStats({
+          prsOpen: prs.length,
+          prsReadyToMerge: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'approved' && p.ci === 'passing').length,
+          prsBlocked: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'changes_requested' || p.ci === 'failed').length,
+          agentsActive: agents.filter((a: { status: string }) => a.status === 'running').length,
+        });
+      } catch (e) {
+        console.error('Failed to compute alerts:', e);
+      }
+    }
+
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 120000);
+
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-12">
@@ -191,6 +214,25 @@ export default function MissionControl() {
         <div className="mb-4">
           <QuickCommand />
         </div>
+
+        {/* Alert Banner */}
+        {alerts.length > 0 && (
+          <div className={cn(
+            'mb-4 border rounded-lg px-4 py-3 flex items-center gap-3',
+            alerts.some(a => a.level === 'red')
+              ? 'bg-red-500/10 border-red-500/40 text-red-200'
+              : alerts.some(a => a.level === 'yellow')
+                ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-200'
+                : 'bg-green-500/10 border-green-500/40 text-green-200'
+          )}>
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-sm font-medium">
+              {alerts.find(a => a.level === 'red')?.message ||
+                alerts.find(a => a.level === 'yellow')?.message ||
+                alerts[0].message}
+            </span>
+          </div>
+        )}
 
         {/* Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

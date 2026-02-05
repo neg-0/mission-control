@@ -133,10 +133,8 @@ export async function GET(request: NextRequest) {
           });
 
           ws.addEventListener('error', (event) => {
-            const message =
-              typeof (event as { message?: string }).message === 'string'
-                ? (event as { message: string }).message
-                : 'WebSocket error';
+            const eventMessage = (event as unknown as { message?: string }).message;
+            const message = typeof eventMessage === 'string' ? eventMessage : 'WebSocket error';
             console.error('[SSE Bridge] WebSocket error:', message);
             if (!closed) {
               sendEvent('error', { message });
