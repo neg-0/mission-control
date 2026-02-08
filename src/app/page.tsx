@@ -614,21 +614,12 @@ export default function MissionControl() {
               />
             </div>
 
-            {/* Alert Banner */}
-            {alerts.length > 0 && (
-              <div className={cn(
-                'mb-4 glass-card px-4 py-3 flex items-center gap-3',
-                alerts.some(a => a.level === 'red')
-                  ? 'glow-red text-red-200'
-                  : alerts.some(a => a.level === 'yellow')
-                    ? 'glow-amber text-yellow-200'
-                    : 'glow-green text-green-200'
-              )}>
+            {/* Alert Banner — only for critical (red) alerts */}
+            {alerts.some(a => a.level === 'red') && (
+              <div className="mb-4 glass-card px-4 py-3 flex items-center gap-3 glow-red text-red-200">
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-sm font-medium">
-                  {alerts.find(a => a.level === 'red')?.message ||
-                    alerts.find(a => a.level === 'yellow')?.message ||
-                    alerts[0].message}
+                  {alerts.find(a => a.level === 'red')!.message}
                 </span>
               </div>
             )}
