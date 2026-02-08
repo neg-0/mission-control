@@ -1,7 +1,7 @@
 'use client';
 
 import { FileText, Loader2, Search, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
 
 interface SearchResult {
@@ -17,7 +17,8 @@ interface SearchResult {
 }
 
 interface WorkspaceSearchProps {
-  onSelectFile?: (filePath: string, workspacePath: string) => void;
+  onSelectFile?: (filePath: string, workspacePath: string, query: string) => void;
+  initialQuery?: string;
   className?: string;
 }
 
@@ -30,8 +31,9 @@ const WS_COLORS: Record<string, string> = {
 };
 const DEFAULT_WS_COLOR = 'bg-gray-500/20 text-gray-300 border-gray-500/30';
 
-export function WorkspaceSearch({ onSelectFile, className }: WorkspaceSearchProps) {
-  const [query, setQuery] = useState('');
+export function WorkspaceSearch({ onSelectFile, initialQuery, className }: WorkspaceSearchProps) {
+  const [query, setQuery] = useState(initialQuery ?? '');
+  const isMac = useMemo(() => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent), []);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -52,12 +54,25 @@ export function WorkspaceSearch({ onSelectFile, className }: WorkspaceSearchProp
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Global "/" shortcut to focus search
+  // Sync external initialQuery changes (e.g. URL param on mount)
+  useEffect(() => {
+    if (initialQuery && initialQuery !== query) {
+      setQuery(initialQuery);
+      doSearch(initialQuery);
+    }
+  }, [initialQuery]);
+
+  // Global "/" and Ctrl/Cmd-F shortcut to focus search
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         inputRef.current?.focus();
+      }
+      if (e.key === 'f' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
       }
     }
     document.addEventListener('keydown', handleKey);
@@ -96,9 +111,9 @@ export function WorkspaceSearch({ onSelectFile, className }: WorkspaceSearchProp
 
   function handleSelect(result: SearchResult) {
     setOpen(false);
-    setQuery('');
     setResults([]);
-    onSelectFile?.(result.filePath, result.workspacePath);
+    // Keep query for highlight, pass it along
+    onSelectFile?.(result.filePath, result.workspacePath, query);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -153,7 +168,7 @@ export function WorkspaceSearch({ onSelectFile, className }: WorkspaceSearchProp
           </button>
         )}
         <kbd className="hidden sm:inline-flex text-[10px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
-          /
+          {isMac ? '⌘F' : 'Ctrl+F'}
         </kbd>
       </div>
 

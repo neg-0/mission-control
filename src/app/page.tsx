@@ -31,6 +31,7 @@ import {
   XCircle,
   Zap
 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { FileBrowser } from '../components/FileBrowser';
 import GatewayOfflineBanner from '../components/GatewayOfflineBanner';
@@ -360,10 +361,18 @@ function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
 // --- Main Page ---
 
 export default function MissionControl() {
+  const searchParams = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'files' | 'prs' | 'goals'>('goals');
+  const [activeTab, setActiveTab] = useState<'files' | 'prs' | 'goals'>(
+    (searchParams.get('tab') as 'files' | 'prs' | 'goals') || 'goals'
+  );
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [searchSelectedFile, setSearchSelectedFile] = useState<string | null>(null);
+  const [searchSelectedFile, setSearchSelectedFile] = useState<string | null>(
+    searchParams.get('file')
+  );
+  const [highlightQuery, setHighlightQuery] = useState<string | null>(
+    searchParams.get('q')
+  );
   const [lastSyncTs, setLastSyncTs] = useState<number>(Date.now());
   const [lastSyncLabel, setLastSyncLabel] = useState('just now');
   const [showSettings, setShowSettings] = useState(false);
@@ -395,6 +404,23 @@ export default function MissionControl() {
     agentsActive: null,
   });
 
+  // URL sync helper — pushes state to URL without page reload
+  function syncUrl(overrides: { ws?: string; tab?: string; file?: string | null; q?: string | null } = {}) {
+    const params = new URLSearchParams(window.location.search);
+    const updates: Record<string, string | null> = {
+      ws: overrides.ws ?? activeWorkspace?.id ?? null,
+      tab: overrides.tab ?? activeTab,
+      file: ('file' in overrides ? overrides.file : searchSelectedFile) ?? null,
+      q: ('q' in overrides ? overrides.q : highlightQuery) ?? null,
+    };
+    for (const [key, value] of Object.entries(updates)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    const qs = params.toString();
+    window.history.replaceState({}, '', qs ? `?${qs}` : window.location.pathname);
+  }
+
   // Load workspaces on mount
   useEffect(() => {
     async function loadWorkspaces() {
@@ -403,7 +429,12 @@ export default function MissionControl() {
         if (res.ok) {
           const data: Workspace[] = await res.json();
           setWorkspaces(data);
-          if (data.length > 0 && !activeWorkspace) {
+          // Restore from URL or default to first
+          const urlWs = searchParams.get('ws');
+          const match = urlWs ? data.find(w => w.id === urlWs) : null;
+          if (match) {
+            setActiveWorkspace(match);
+          } else if (data.length > 0 && !activeWorkspace) {
             setActiveWorkspace(data[0]);
           }
         }
@@ -477,6 +508,8 @@ export default function MissionControl() {
   function switchWorkspace(ws: Workspace) {
     setActiveWorkspace(ws);
     setSearchSelectedFile(null);
+    setHighlightQuery(null);
+    syncUrl({ ws: ws.id, file: null, q: null });
   }
 
   // Save workspaces from settings
@@ -500,14 +533,21 @@ export default function MissionControl() {
   }
 
   // Handle search result selecting a file (possibly from another workspace)
-  function handleSearchSelect(filePath: string, workspacePath: string) {
+  function handleSearchSelect(filePath: string, workspacePath: string, query: string) {
     // Switch workspace if needed
     const targetWs = workspaces.find(w => w.path === workspacePath);
     if (targetWs && targetWs.id !== activeWorkspace?.id) {
       setActiveWorkspace(targetWs);
     }
     setSearchSelectedFile(filePath);
+    setHighlightQuery(query || null);
     setActiveTab('files');
+    syncUrl({
+      ws: targetWs?.id,
+      tab: 'files',
+      file: filePath,
+      q: query || null,
+    });
   }
 
   return (
@@ -611,6 +651,7 @@ export default function MissionControl() {
             <div className="mb-4">
               <WorkspaceSearch
                 onSelectFile={handleSearchSelect}
+                initialQuery={highlightQuery ?? undefined}
               />
             </div>
 
@@ -637,7 +678,7 @@ export default function MissionControl() {
               {(['goals', 'files', 'prs'] as const).map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => { setActiveTab(tab); syncUrl({ tab }); }}
                   className={cn(
                     'px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
                     activeTab === tab
@@ -663,6 +704,7 @@ export default function MissionControl() {
                   className="h-[600px]"
                   initialFile={searchSelectedFile}
                   workspace={activeWorkspace?.path}
+                  highlightQuery={highlightQuery}
                 />
               </div>
 

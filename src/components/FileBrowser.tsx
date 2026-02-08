@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown, ChevronRight, Code2, Eye, File, Folder, FolderOpen, Maximize2, X } from 'lucide-react';
-import { useEffect, useState, type ComponentPropsWithoutRef } from 'react';
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
@@ -19,6 +19,7 @@ interface FileBrowserProps {
   className?: string;
   initialFile?: string | null;
   workspace?: string | null;
+  highlightQuery?: string | null;
 }
 
 // File extensions that should be rendered as markdown
@@ -128,7 +129,7 @@ function TreeNode({
 // ---------------------------------------------------------------------------
 // FileBrowser
 // ---------------------------------------------------------------------------
-export function FileBrowser({ className, initialFile, workspace }: FileBrowserProps) {
+export function FileBrowser({ className, initialFile, workspace, highlightQuery }: FileBrowserProps) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
@@ -137,6 +138,33 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
   const [fullscreen, setFullscreen] = useState(false);
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set());
   const [viewRaw, setViewRaw] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Highlight helper — splits text and wraps matches in <mark>
+  function highlightText(text: string): ReactNode {
+    if (!highlightQuery || highlightQuery.length < 2) return text;
+    const escaped = highlightQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(re);
+    if (parts.length === 1) return text;
+    return parts.map((part, i) =>
+      re.test(part)
+        ? <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded-sm px-0.5">{part}</mark>
+        : part
+    );
+  }
+
+  // Auto-scroll to first highlight after content renders
+  useEffect(() => {
+    if (!highlightQuery || !contentRef.current) return;
+    const timer = setTimeout(() => {
+      const firstMark = contentRef.current?.querySelector('mark');
+      if (firstMark) {
+        firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [fileContent, highlightQuery, selectedFile]);
 
   // Refetch tree when workspace changes
   useEffect(() => {
@@ -256,7 +284,7 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
     if (!isMd || viewRaw) {
       const lang = extToLang(selectedFile);
       return (
-        <div className="code-view relative">
+        <div className="code-view relative" ref={contentRef}>
           <pre className="text-sm leading-relaxed overflow-x-auto">
             <code className={`language-${lang} hljs`}>
               {fileContent.split('\n').map((line, i) => (
@@ -264,7 +292,7 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
                   <span className="code-line-number select-none text-muted-foreground/40 text-right pr-4 min-w-[3rem] flex-shrink-0 tabular-nums">
                     {i + 1}
                   </span>
-                  <span className="code-line-content flex-1">{line || '\n'}</span>
+                  <span className="code-line-content flex-1">{highlightText(line) || '\n'}</span>
                 </div>
               ))}
             </code>
@@ -274,12 +302,16 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
     }
 
     return (
-      <article className="prose prose-invert prose-sm max-w-none markdown-rendered">
+      <article ref={contentRef} className="prose prose-invert prose-sm max-w-none markdown-rendered">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight]}
           components={{
             code: CodeBlock,
+            // Wrap text nodes in paragraphs, list items, etc. with highlights
+            p: ({ children, ...props }) => <p {...props}>{typeof children === 'string' ? highlightText(children) : children}</p>,
+            li: ({ children, ...props }) => <li {...props}>{typeof children === 'string' ? highlightText(children) : children}</li>,
+            td: ({ children, ...props }) => <td {...props}>{typeof children === 'string' ? highlightText(children) : children}</td>,
           }}
         >
           {fileContent}
