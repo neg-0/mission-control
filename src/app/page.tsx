@@ -404,7 +404,7 @@ export default function MissionControl() {
     agentsActive: null,
   });
 
-  // URL sync helper — pushes state to URL without page reload
+  // URL sync helper — pushes state to browser history
   function syncUrl(overrides: { ws?: string; tab?: string; file?: string | null; q?: string | null } = {}) {
     const params = new URLSearchParams(window.location.search);
     const updates: Record<string, string | null> = {
@@ -418,8 +418,33 @@ export default function MissionControl() {
       else params.delete(key);
     }
     const qs = params.toString();
-    window.history.replaceState({}, '', qs ? `?${qs}` : window.location.pathname);
+    const newUrl = qs ? `?${qs}` : window.location.pathname;
+    // Only push if URL actually changed
+    if (newUrl !== `${window.location.pathname}${window.location.search}`) {
+      window.history.pushState({}, '', newUrl);
+    }
   }
+
+  // Handle browser back/forward
+  useEffect(() => {
+    function handlePopState() {
+      const params = new URLSearchParams(window.location.search);
+      const urlWs = params.get('ws');
+      const urlTab = params.get('tab') as 'files' | 'prs' | 'goals' | null;
+      const urlFile = params.get('file');
+      const urlQ = params.get('q');
+
+      if (urlTab) setActiveTab(urlTab);
+      if (urlFile !== searchSelectedFile) setSearchSelectedFile(urlFile);
+      if (urlQ !== highlightQuery) setHighlightQuery(urlQ);
+      if (urlWs) {
+        const match = workspaces.find(w => w.id === urlWs);
+        if (match && match.id !== activeWorkspace?.id) setActiveWorkspace(match);
+      }
+    }
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [workspaces, activeWorkspace, searchSelectedFile, highlightQuery]);
 
   // Load workspaces on mount
   useEffect(() => {
