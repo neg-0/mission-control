@@ -4,6 +4,7 @@ import path from 'path';
 
 // Agent config paths — derived from gateway health data
 const AGENTS_ROOT = '/home/neg0/.openclaw/agents';
+const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
 
 interface AgentConfig {
   agentId: string;
@@ -37,7 +38,30 @@ interface SessionEntry {
   };
 }
 
+// Read model config from openclaw.json (cached)
+let modelCache: { primary: string; subagent: string; ts: number } | null = null;
+const MODEL_CACHE_TTL = 60_000; // 1 minute
+
+async function getModels(): Promise<{ primary: string; subagent: string }> {
+  if (modelCache && Date.now() - modelCache.ts < MODEL_CACHE_TTL) {
+    return modelCache;
+  }
+  try {
+    const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+    const cfg = JSON.parse(raw);
+    const defaults = cfg?.agents?.defaults || {};
+    const primary = defaults?.model?.primary || 'unknown';
+    const subagent = defaults?.subagents?.model?.primary || primary;
+    modelCache = { primary, subagent, ts: Date.now() };
+    return modelCache;
+  } catch {
+    return { primary: 'unknown', subagent: 'unknown' };
+  }
+}
+
 export async function GET() {
+  const models = await getModels();
+
   const sessions: Array<{
     sessionKey: string;
     label: string;
@@ -46,6 +70,7 @@ export async function GET() {
     agentId: string;
     agentName: string;
     kind: string;
+    model: string;
   }> = [];
 
   for (const agent of AGENTS) {
@@ -72,6 +97,9 @@ export async function GET() {
         }
         if (kind === 'main') label = 'Main Session';
 
+        // Resolve model: main sessions get the primary, everything else gets subagent
+        const model = kind === 'main' ? models.primary : models.subagent;
+
         const ageMs = entry.updatedAt ? Date.now() - entry.updatedAt : Infinity;
         const isActive = ageMs < 5 * 60 * 1000; // Active if updated within 5 minutes
 
@@ -83,6 +111,7 @@ export async function GET() {
           agentId: agent.agentId,
           agentName: agent.name,
           kind,
+          model,
         });
       }
     } catch (e) {

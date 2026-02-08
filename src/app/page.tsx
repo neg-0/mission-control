@@ -61,12 +61,12 @@ function formatRelativeTime(ts: number): string {
 
 function AlertLevel({ level }: { level: string }) {
   const config: Record<string, string> = {
-    red: 'bg-red-500',
-    yellow: 'bg-yellow-500',
-    green: 'bg-green-500',
+    red: 'led-red',
+    yellow: 'led-yellow',
+    green: 'led-green',
   };
   return (
-    <div className={cn('w-2 h-2 rounded-full animate-pulse', config[level] || 'bg-gray-500')} />
+    <div className={cn('w-2 h-2 led led-pulse', config[level] || 'led-gray')} />
   );
 }
 
@@ -93,14 +93,17 @@ function StatCard({ label, value, icon: Icon, trend, onClick }: {
     <button
       onClick={onClick}
       className={cn(
-        'bg-card border border-border rounded-lg p-4 text-left transition-colors',
-        onClick && 'hover:border-primary/50 cursor-pointer'
+        'glass-card hover-lift p-4 text-left group',
+        onClick && 'cursor-pointer',
+        trend === 'up' && 'hover:glow-green',
+        trend === 'down' && 'hover:glow-red',
+        !trend && 'hover:glow-blue'
       )}
     >
       <div className="flex items-center justify-between">
-        <Icon className="w-5 h-5 text-muted-foreground" />
+        <Icon className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
         <span className={cn(
-          'text-2xl font-bold',
+          'text-2xl font-bold count-up tabular-nums',
           trend === 'up' && 'text-green-400',
           trend === 'down' && 'text-red-400'
         )}>
@@ -142,7 +145,7 @@ function WorkspaceSelector({ workspaces, active, onSelect }: {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-xl z-50 min-w-[220px] py-1">
+          <div className="absolute top-full left-0 mt-1 glass-card shadow-xl z-50 min-w-[220px] py-1">
             {workspaces.map((ws) => (
               <button
                 key={ws.id}
@@ -266,7 +269,7 @@ function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-lg mx-4 space-y-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="glass-card p-6 w-full max-w-lg mx-4 space-y-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-lg">Settings</h2>
           <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
@@ -283,7 +286,7 @@ function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
           <div>
             <label className="text-xs text-muted-foreground">Gateway Status</label>
             <div className="flex items-center gap-2">
-              <div className={cn('w-2 h-2 rounded-full', connected ? 'bg-green-500' : 'bg-gray-500')} />
+              <div className={cn('w-2 h-2 led', connected ? 'led-green' : 'led-gray')} />
               <span>{connected ? 'Connected' : connecting ? 'Connecting...' : 'Disconnected'}</span>
             </div>
           </div>
@@ -503,9 +506,13 @@ export default function MissionControl() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-12">
+    <div className="min-h-screen text-foreground pb-12 relative">
+      {/* Animated mesh background */}
+      <div className="mesh-bg fixed inset-0 -z-10">
+        <div className="mesh-bg-accent" />
+      </div>
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border">
+      <header className="sticky top-0 z-50 glass-card rounded-none border-x-0 border-t-0">
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center">
           {/* Left: Workspace Selector */}
           <div className="flex-1 flex items-center">
@@ -516,17 +523,47 @@ export default function MissionControl() {
             />
           </div>
 
-          {/* Center: Title */}
-          <h1 className="text-xl font-bold tracking-[0.25em] uppercase text-foreground select-none">
-            Mission Control
+          {/* Center: Logo Title */}
+          <h1 className="select-none flex items-center gap-0">
+            <span className="text-lg font-light tracking-[0.3em] uppercase text-foreground/70">
+              Mission
+            </span>
+            <span className="mx-2 w-px h-5 bg-foreground/20" />
+            <span className="text-xl font-bold tracking-[0.2em] uppercase flex items-center">
+              <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                CONTR
+              </span>
+              {/* Radar icon replacing the "O" */}
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                className="inline-block -mx-0.5 relative top-px"
+              >
+                <circle cx="12" cy="12" r="10" stroke="url(#radar-grad)" strokeWidth="1.5" fill="none" opacity="0.6" />
+                <circle cx="12" cy="12" r="6" stroke="url(#radar-grad)" strokeWidth="1.5" fill="none" opacity="0.8" />
+                <circle cx="12" cy="12" r="2" stroke="url(#radar-grad)" strokeWidth="1.5" fill="none" />
+                <circle cx="14" cy="10" r="2" fill="#22d3ee" className="animate-pulse" />
+                <defs>
+                  <linearGradient id="radar-grad" x1="0" y1="0" x2="24" y2="24">
+                    <stop offset="0%" stopColor="#60a5fa" />
+                    <stop offset="100%" stopColor="#22d3ee" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <span className="bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                L
+              </span>
+            </span>
           </h1>
 
           {/* Right: Status + Settings */}
           <div className="flex-1 flex items-center justify-end gap-3">
             <div className="hidden md:flex items-center gap-2">
               <div className={cn(
-                'w-2 h-2 rounded-full',
-                connected ? 'bg-green-500' : connecting ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'
+                'w-2 h-2 led',
+                connected ? 'led-green' : connecting ? 'led-yellow led-pulse' : 'led-gray'
               )} />
               <span className="text-sm text-muted-foreground">
                 {connected ? 'Live' : connecting ? 'Connecting...' : 'Offline'}
@@ -573,12 +610,12 @@ export default function MissionControl() {
             {/* Alert Banner */}
             {alerts.length > 0 && (
               <div className={cn(
-                'mb-4 border rounded-lg px-4 py-3 flex items-center gap-3',
+                'mb-4 glass-card px-4 py-3 flex items-center gap-3',
                 alerts.some(a => a.level === 'red')
-                  ? 'bg-red-500/10 border-red-500/40 text-red-200'
+                  ? 'glow-red text-red-200'
                   : alerts.some(a => a.level === 'yellow')
-                    ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-200'
-                    : 'bg-green-500/10 border-green-500/40 text-green-200'
+                    ? 'glow-amber text-yellow-200'
+                    : 'glow-green text-green-200'
               )}>
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-sm font-medium">
@@ -649,7 +686,7 @@ export default function MissionControl() {
 
                 {/* Alerts */}
                 {alerts.length > 0 && (
-                  <div className="bg-card border border-border rounded-lg overflow-hidden">
+                  <div className="glass-card overflow-hidden">
                     <div className="p-3 border-b border-border flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-orange-400" />
                       <h2 className="font-semibold">Alerts</h2>
@@ -679,7 +716,7 @@ export default function MissionControl() {
       )}
 
       {/* Footer Status Bar */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-card border-t border-border px-4 py-2">
+      <footer className="fixed bottom-0 left-0 right-0 glass-card rounded-none border-x-0 border-b-0 px-4 py-2">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-4">
             <span className={cn(

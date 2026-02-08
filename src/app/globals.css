@@ -1,6 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Design Tokens
+   --------------------------------------------------------------------------- */
 
 :root {
   --background: 222 47% 11%;
@@ -18,7 +24,461 @@
 }
 
 body {
-  background: hsl(var(--background));
+  background: #080b14;
   color: hsl(var(--foreground));
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Animated Mesh Background
+   --------------------------------------------------------------------------- */
+
+.mesh-bg {
+  background: #080b14;
+  overflow: hidden;
+}
+
+.mesh-bg::before,
+.mesh-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  animation: mesh-float 20s ease-in-out infinite alternate;
+}
+
+.mesh-bg::before {
+  width: 600px;
+  height: 600px;
+  top: -10%;
+  left: -5%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+  animation-duration: 25s;
+}
+
+.mesh-bg::after {
+  width: 500px;
+  height: 500px;
+  bottom: -10%;
+  right: -5%;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.06) 0%, transparent 70%);
+  animation-duration: 30s;
+  animation-direction: alternate-reverse;
+}
+
+/* Third blob via a child element */
+.mesh-bg-accent {
+  position: absolute;
+  width: 400px;
+  height: 400px;
+  top: 40%;
+  left: 50%;
+  border-radius: 50%;
+  filter: blur(120px);
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.05) 0%, transparent 70%);
+  animation: mesh-float 35s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes mesh-float {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -20px) scale(1.05);
+  }
+
+  66% {
+    transform: translate(-20px, 30px) scale(0.95);
+  }
+
+  100% {
+    transform: translate(10px, -10px) scale(1.02);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Glassmorphic Card
+   --------------------------------------------------------------------------- */
+
+.glass-card {
+  background: rgba(12, 17, 30, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.03) inset,
+    0 4px 24px rgba(0, 0, 0, 0.2);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.2s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ---------------------------------------------------------------------------
+   Contextual Glow Utilities
+   --------------------------------------------------------------------------- */
+
+.glow-blue {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px rgba(59, 130, 246, 0.15),
+    0 0 40px rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.glow-cyan {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px rgba(34, 211, 238, 0.15),
+    0 0 40px rgba(34, 211, 238, 0.05);
+  border-color: rgba(34, 211, 238, 0.2);
+}
+
+.glow-green {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px rgba(34, 197, 94, 0.15),
+    0 0 40px rgba(34, 197, 94, 0.05);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.glow-amber {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px rgba(245, 158, 11, 0.15),
+    0 0 40px rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.glow-red {
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px rgba(239, 68, 68, 0.15),
+    0 0 40px rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* ---------------------------------------------------------------------------
+   Skeleton Shimmer
+   --------------------------------------------------------------------------- */
+
+.skeleton {
+  background: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.03) 25%,
+      rgba(255, 255, 255, 0.06) 50%,
+      rgba(255, 255, 255, 0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.375rem;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Smooth Transitions (global defaults)
+   --------------------------------------------------------------------------- */
+
+button,
+a,
+[role="button"] {
+  transition: all 0.2s ease;
+}
+
+/* ---------------------------------------------------------------------------
+   Scrollbar Styling
+   --------------------------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ---------------------------------------------------------------------------
+   Animated Counters
+   --------------------------------------------------------------------------- */
+
+.count-up {
+  animation: count-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes count-pop {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+
+  60% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Progress Bar Glow
+   --------------------------------------------------------------------------- */
+
+.progress-glow {
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+  animation: progress-pulse 2s ease-in-out infinite;
+}
+
+@keyframes progress-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.5);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Hover Scale Utility
+   --------------------------------------------------------------------------- */
+
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-1px) scale(1.01);
+}
+
+/* ---------------------------------------------------------------------------
+   LED Indicators — glowing status dots
+   --------------------------------------------------------------------------- */
+
+.led {
+  border-radius: 9999px;
+  position: relative;
+}
+
+.led-green {
+  background: #22c55e;
+  box-shadow: 0 0 4px #22c55e, 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.led-yellow {
+  background: #eab308;
+  box-shadow: 0 0 4px #eab308, 0 0 8px rgba(234, 179, 8, 0.4);
+}
+
+.led-red {
+  background: #ef4444;
+  box-shadow: 0 0 4px #ef4444, 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.led-blue {
+  background: #3b82f6;
+  box-shadow: 0 0 4px #3b82f6, 0 0 8px rgba(59, 130, 246, 0.4);
+}
+
+.led-orange {
+  background: #f97316;
+  box-shadow: 0 0 4px #f97316, 0 0 8px rgba(249, 115, 22, 0.4);
+}
+
+.led-gray {
+  background: #6b7280;
+  box-shadow: 0 0 2px rgba(107, 114, 128, 0.3);
+}
+
+/* Pulsing glow — pair with animate-pulse for synced brightness + glow */
+.led-pulse {
+  animation: led-glow-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes led-glow-pulse {
+
+  0%,
+  100% {
+    filter: brightness(1);
+    opacity: 1;
+  }
+
+  50% {
+    filter: brightness(1.4);
+    opacity: 0.7;
+  }
+}
+/* ---------------------------------------------------------------------------
+   Highlight.js Dark Theme
+   --------------------------------------------------------------------------- */
+@import 'highlight.js/styles/github-dark.css';
+
+/* ---------------------------------------------------------------------------
+   Markdown Prose Overrides
+   --------------------------------------------------------------------------- */
+
+.markdown-rendered {
+  --tw-prose-body: hsl(var(--foreground));
+  --tw-prose-headings: hsl(var(--foreground));
+  --tw-prose-links: hsl(var(--primary));
+}
+
+.markdown-rendered h1,
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4 {
+  scroll-margin-top: 2rem;
+  border-bottom: 1px solid hsl(var(--border));
+  padding-bottom: 0.3em;
+  margin-top: 1.5em;
+}
+
+.markdown-rendered h1 { font-size: 1.6rem; }
+.markdown-rendered h2 { font-size: 1.3rem; }
+.markdown-rendered h3 { font-size: 1.1rem; }
+
+.markdown-rendered a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-rendered a:hover { opacity: 0.8; }
+
+.markdown-rendered table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.markdown-rendered th,
+.markdown-rendered td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid hsl(var(--border));
+  text-align: left;
+}
+
+.markdown-rendered th {
+  background: hsl(var(--muted));
+  font-weight: 600;
+}
+
+.markdown-rendered tr:nth-child(even) {
+  background: hsl(var(--muted) / 0.3);
+}
+
+.markdown-rendered blockquote {
+  border-left: 3px solid hsl(var(--primary));
+  padding-left: 1rem;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
+.markdown-rendered code:not(pre code) {
+  background: hsl(var(--muted) / 0.6);
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+}
+
+.markdown-rendered pre {
+  background: hsl(222 47% 8% / 0.8) !important;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.markdown-rendered pre code {
+  background: transparent !important;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.markdown-rendered input[type="checkbox"] {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid hsl(var(--muted-foreground));
+  border-radius: 0.2rem;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  position: relative;
+}
+
+.markdown-rendered input[type="checkbox"]:checked {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+
+.markdown-rendered input[type="checkbox"]:checked::after {
+  content: '\2713';
+  position: absolute;
+  color: white;
+  font-size: 0.7rem;
+  top: -1px;
+  left: 2px;
+}
+
+.markdown-rendered img {
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+}
+
+.markdown-rendered hr { border-color: hsl(var(--border)); }
+
+/* Mermaid container */
+.mermaid-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.mermaid-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Code View (non-markdown files)
+   --------------------------------------------------------------------------- */
+
+.code-view {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.code-line:hover {
+  background: hsl(var(--accent) / 0.5);
+}
+
+.code-line-number {
+  user-select: none;
+  font-size: 0.75rem;
 }

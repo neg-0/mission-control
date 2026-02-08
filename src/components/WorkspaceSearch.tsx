@@ -159,7 +159,7 @@ export function WorkspaceSearch({ onSelectFile, className }: WorkspaceSearchProp
 
       {/* Results Dropdown */}
       {open && results.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-xl z-50 max-h-[420px] overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 glass-card shadow-xl z-50 max-h-[420px] overflow-y-auto">
           <div className="p-2 border-b border-border">
             <span className="text-xs text-muted-foreground">
               {results.length} result{results.length !== 1 ? 's' : ''} across all workspaces

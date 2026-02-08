@@ -129,17 +129,14 @@ export function useGatewayStream(options: UseGatewayStreamOptions = {}) {
   };
 }
 
-// Event type helpers
+// Event type helpers — matches actual gateway AgentEventPayload schema
 export interface AgentRunEvent {
   runId: string;
-  sessionKey: string;
-  status: 'started' | 'running' | 'completed' | 'failed';
-  label?: string;
-  task?: string;
-  thinking?: string;
-  toolCall?: { name: string; args: unknown };
-  result?: unknown;
-  error?: string;
+  sessionKey?: string;
+  seq: number;
+  stream: 'lifecycle' | 'tool' | 'assistant' | 'compaction' | 'error' | (string & {});
+  ts: number;
+  data: Record<string, unknown>;
 }
 
 export interface TickEvent {

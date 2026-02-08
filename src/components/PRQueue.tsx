@@ -1,17 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  GitPullRequest, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
-  Send, 
-  Copy, 
-  RefreshCw,
+import {
+  CheckCircle2,
+  Clock,
+  Copy,
   ExternalLink,
-  Loader2
+  GitPullRequest,
+  Loader2,
+  RefreshCw,
+  Send,
+  XCircle
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { cn } from '../lib/utils';
 
 interface PR {
@@ -72,7 +72,7 @@ function OwnerBadge({ owner }: { owner: string }) {
 
 function PRRow({ pr, onKick }: { pr: PR; onKick?: (pr: PR) => void }) {
   const prUrl = pr.url || `https://github.com/neg-0/comp-iq/pull/${pr.id}`;
-  
+
   return (
     <div className="flex items-center gap-3 p-3 hover:bg-accent/50 rounded-lg transition-colors group">
       {/* CI Status Icon */}
@@ -82,11 +82,11 @@ function PRRow({ pr, onKick }: { pr: PR; onKick?: (pr: PR) => void }) {
         {pr.ci === 'pending' && <Clock className="w-5 h-5 text-yellow-400 animate-pulse" />}
         {pr.ci === 'skipped' && <Clock className="w-5 h-5 text-gray-400" />}
       </div>
-      
+
       {/* PR Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <a 
+          <a
             href={prUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -107,24 +107,24 @@ function PRRow({ pr, onKick }: { pr: PR; onKick?: (pr: PR) => void }) {
           )}
         </div>
       </div>
-      
+
       {/* Status & Owner */}
       <div className="flex items-center gap-2 flex-shrink-0">
         <StatusBadge status={pr.reviewState} />
         <OwnerBadge owner={pr.owner} />
       </div>
-      
+
       {/* Actions (visible on hover) */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button 
-          className="p-1.5 hover:bg-primary/20 rounded" 
+        <button
+          className="p-1.5 hover:bg-primary/20 rounded"
           title="Kick to Rocket"
           onClick={() => onKick?.(pr)}
         >
           <Send className="w-4 h-4 text-primary" />
         </button>
-        <button 
-          className="p-1.5 hover:bg-muted rounded" 
+        <button
+          className="p-1.5 hover:bg-muted rounded"
           title="Copy PR link"
           onClick={() => navigator.clipboard.writeText(prUrl)}
         >
@@ -144,7 +144,7 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
   async function fetchPRs() {
     setLoading(true);
     setError(null);
-    
+
     try {
       const res = await fetch(`/api/github/prs?repo=${encodeURIComponent(repo)}`);
       if (res.ok) {
@@ -223,7 +223,7 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
   };
 
   return (
-    <div className={cn('bg-card border border-border rounded-lg overflow-hidden', className)}>
+    <div className={cn('glass-card overflow-hidden', className)}>
       <div className="p-3 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <GitPullRequest className="w-5 h-5 text-primary" />
@@ -243,7 +243,7 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <select 
+          <select
             className="text-xs bg-accent border border-border rounded px-2 py-1"
             value={filter}
             onChange={(e) => setFilter(e.target.value as typeof filter)}
@@ -252,8 +252,8 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
             <option value="needs-action">Needs Action</option>
             <option value="ready">Ready to Merge</option>
           </select>
-          <button 
-            onClick={fetchPRs} 
+          <button
+            onClick={fetchPRs}
             className="p-1.5 hover:bg-accent rounded"
             title="Refresh"
             disabled={loading}
@@ -262,7 +262,7 @@ export function PRQueue({ className, repo = 'neg-0/comp-iq' }: PRQueueProps) {
           </button>
         </div>
       </div>
-      
+
       <div className="p-2 max-h-[400px] overflow-y-auto">
         {loading && prs.length === 0 ? (
           <div className="p-4 flex items-center justify-center gap-2 text-muted-foreground">

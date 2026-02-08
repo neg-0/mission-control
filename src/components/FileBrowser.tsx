@@ -1,9 +1,12 @@
 'use client';
 
-import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Maximize2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronDown, ChevronRight, Code2, Eye, File, Folder, FolderOpen, Maximize2, X } from 'lucide-react';
+import { useEffect, useState, type ComponentPropsWithoutRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
 import { cn } from '../lib/utils';
+import { MermaidChart } from './MermaidChart';
 
 interface FileNode {
   name: string;
@@ -18,6 +21,113 @@ interface FileBrowserProps {
   workspace?: string | null;
 }
 
+// File extensions that should be rendered as markdown
+const MARKDOWN_EXTS = new Set(['.md', '.mdx', '.markdown']);
+
+function isMarkdownFile(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase();
+  return MARKDOWN_EXTS.has(ext);
+}
+
+// Map file extensions to highlight.js language names
+function extToLang(path: string): string {
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    py: 'python', rb: 'ruby', rs: 'rust', go: 'go', java: 'java',
+    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    css: 'css', scss: 'scss', html: 'html', xml: 'xml',
+    sh: 'bash', bash: 'bash', zsh: 'bash',
+    sql: 'sql', graphql: 'graphql',
+    dockerfile: 'dockerfile', makefile: 'makefile',
+  };
+  return map[ext] || 'plaintext';
+}
+
+// ---------------------------------------------------------------------------
+// Tree node — defined outside FileBrowser so React keeps a stable component
+// identity across re-renders, which preserves the tree pane scroll position.
+// ---------------------------------------------------------------------------
+interface TreeNodeProps {
+  node: FileNode;
+  depth?: number;
+  expanded: Set<string>;
+  selectedFile: string | null;
+  modifiedFiles: Set<string>;
+  onToggleExpand: (path: string) => void;
+  onLoadFile: (path: string) => void;
+}
+
+function TreeNode({
+  node, depth = 0, expanded, selectedFile, modifiedFiles, onToggleExpand, onLoadFile,
+}: TreeNodeProps) {
+  const isExpanded = expanded.has(node.path);
+  const isSelected = selectedFile === node.path;
+  const isModified = modifiedFiles.has(node.path);
+  const dirPadding = depth * 16 + 8;
+  const filePadding = depth * 16 + 20;
+
+  if (node.type === 'directory') {
+    return (
+      <div>
+        <button
+          onClick={() => onToggleExpand(node.path)}
+          className="w-full flex items-center gap-1 py-1 pr-2 text-sm hover:bg-accent/50 rounded transition-colors text-left"
+          style={{ paddingLeft: `${dirPadding}px` }}
+        >
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+          )}
+          {isExpanded ? (
+            <FolderOpen className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+          ) : (
+            <Folder className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+          )}
+          <span className="truncate">{node.name}</span>
+        </button>
+        {isExpanded && node.children && (
+          <div>
+            {node.children.map(child => (
+              <TreeNode
+                key={child.path}
+                node={child}
+                depth={depth + 1}
+                expanded={expanded}
+                selectedFile={selectedFile}
+                modifiedFiles={modifiedFiles}
+                onToggleExpand={onToggleExpand}
+                onLoadFile={onLoadFile}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => onLoadFile(node.path)}
+      className={cn(
+        'w-full flex items-center gap-1 py-1 pr-2 text-sm hover:bg-accent/50 rounded transition-colors text-left',
+        isSelected && 'bg-primary/20 text-primary'
+      )}
+      style={{ paddingLeft: `${filePadding}px` }}
+    >
+      <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <span className="truncate">{node.name}</span>
+      {isModified && (
+        <span className="w-2 h-2 led led-blue flex-shrink-0 ml-auto" title="Modified" />
+      )}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FileBrowser
+// ---------------------------------------------------------------------------
 export function FileBrowser({ className, initialFile, workspace }: FileBrowserProps) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -26,6 +136,7 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['']));
   const [fullscreen, setFullscreen] = useState(false);
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set());
+  const [viewRaw, setViewRaw] = useState(false);
 
   // Refetch tree when workspace changes
   useEffect(() => {
@@ -77,6 +188,7 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
         const data = await res.json();
         setFileContent(data.content);
         setSelectedFile(path);
+        setViewRaw(false);
         setModifiedFiles(prev => {
           const next = new Set(prev);
           next.delete(path);
@@ -100,72 +212,96 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
     });
   }
 
-  function TreeNode({ node, depth = 0 }: { node: FileNode; depth?: number }) {
-    const isExpanded = expanded.has(node.path);
-    const isSelected = selectedFile === node.path;
-    const isModified = modifiedFiles.has(node.path);
+  // ---------------------------------------------------------------------------
+  // Custom code block — renders mermaid blocks as diagrams
+  // ---------------------------------------------------------------------------
+  function CodeBlock({ className: codeClassName, children, ...props }: ComponentPropsWithoutRef<'code'>) {
+    const match = /language-(\w+)/.exec(codeClassName || '');
+    const lang = match?.[1];
+    const codeString = String(children).replace(/\n$/, '');
 
-    if (node.type === 'directory') {
+    if (lang === 'mermaid') {
+      return <MermaidChart chart={codeString} className="my-4" />;
+    }
+
+    if (!match) {
       return (
-        <div>
-          <button
-            onClick={() => toggleExpand(node.path)}
-            className={cn(
-              'w-full flex items-center gap-1 px-2 py-1 text-sm hover:bg-accent/50 rounded transition-colors text-left',
-              depth > 0 && 'ml-4'
-            )}
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            )}
-            {isExpanded ? (
-              <FolderOpen className="w-4 h-4 text-yellow-500 flex-shrink-0" />
-            ) : (
-              <Folder className="w-4 h-4 text-yellow-500 flex-shrink-0" />
-            )}
-            <span className="truncate">{node.name}</span>
-          </button>
-          {isExpanded && node.children && (
-            <div>
-              {node.children.map(child => (
-                <TreeNode key={child.path} node={child} depth={depth + 1} />
+        <code className="bg-muted/60 px-1.5 py-0.5 rounded text-[0.85em] text-primary/90" {...props}>
+          {children}
+        </code>
+      );
+    }
+
+    return (
+      <code className={codeClassName} {...props}>
+        {children}
+      </code>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Content area — smart rendering based on file type
+  // ---------------------------------------------------------------------------
+  function FileContentView() {
+    if (!selectedFile) {
+      return (
+        <div className="text-sm text-muted-foreground">
+          Select a file from the tree to view its contents.
+        </div>
+      );
+    }
+
+    const isMd = isMarkdownFile(selectedFile);
+
+    if (!isMd || viewRaw) {
+      const lang = extToLang(selectedFile);
+      return (
+        <div className="code-view relative">
+          <pre className="text-sm leading-relaxed overflow-x-auto">
+            <code className={`language-${lang} hljs`}>
+              {fileContent.split('\n').map((line, i) => (
+                <div key={i} className="code-line flex">
+                  <span className="code-line-number select-none text-muted-foreground/40 text-right pr-4 min-w-[3rem] flex-shrink-0 tabular-nums">
+                    {i + 1}
+                  </span>
+                  <span className="code-line-content flex-1">{line || '\n'}</span>
+                </div>
               ))}
-            </div>
-          )}
+            </code>
+          </pre>
         </div>
       );
     }
 
     return (
-      <button
-        onClick={() => loadFile(node.path)}
-        className={cn(
-          'w-full flex items-center gap-1 px-2 py-1 text-sm hover:bg-accent/50 rounded transition-colors text-left',
-          depth > 0 && 'ml-4',
-          isSelected && 'bg-primary/20 text-primary'
-        )}
-        style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
-      >
-        <File className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-        <span className="truncate">{node.name}</span>
-        {isModified && (
-          <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 ml-auto" title="Modified" />
-        )}
-      </button>
+      <article className="prose prose-invert prose-sm max-w-none markdown-rendered">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeHighlight]}
+          components={{
+            code: CodeBlock,
+          }}
+        >
+          {fileContent}
+        </ReactMarkdown>
+      </article>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // No workspace guard
+  // ---------------------------------------------------------------------------
   if (!workspace) {
     return (
-      <div className={cn('bg-card border border-border rounded-lg overflow-hidden flex items-center justify-center', className)}>
+      <div className={cn('glass-card overflow-hidden flex items-center justify-center', className)}>
         <div className="text-sm text-muted-foreground p-8 text-center">
           No workspace selected. Add one in Settings ⚙
         </div>
       </div>
     );
   }
+
+  const isMd = selectedFile ? isMarkdownFile(selectedFile) : false;
 
   const content = (
     <div className={cn('flex h-full', fullscreen && 'fixed inset-0 z-50 bg-background')}>
@@ -184,7 +320,17 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
           {loading ? (
             <div className="p-4 text-sm text-muted-foreground">Loading...</div>
           ) : (
-            tree.map(node => <TreeNode key={node.path} node={node} />)
+            tree.map(node => (
+              <TreeNode
+                key={node.path}
+                node={node}
+                expanded={expanded}
+                selectedFile={selectedFile}
+                modifiedFiles={modifiedFiles}
+                onToggleExpand={toggleExpand}
+                onLoadFile={loadFile}
+              />
+            ))
           )}
         </div>
       </div>
@@ -196,6 +342,24 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
             {selectedFile || 'Select a file'}
           </span>
           <div className="flex items-center gap-1">
+            {isMd && selectedFile && (
+              <button
+                onClick={() => setViewRaw(!viewRaw)}
+                className={cn(
+                  'p-1 rounded transition-colors flex items-center gap-1 text-xs',
+                  viewRaw
+                    ? 'bg-accent text-accent-foreground hover:bg-accent/80'
+                    : 'hover:bg-accent text-muted-foreground'
+                )}
+                title={viewRaw ? 'Show rendered' : 'Show source'}
+              >
+                {viewRaw ? (
+                  <><Eye className="w-3.5 h-3.5" /> Preview</>
+                ) : (
+                  <><Code2 className="w-3.5 h-3.5" /> Source</>
+                )}
+              </button>
+            )}
             <button
               onClick={() => setFullscreen(!fullscreen)}
               className="p-1 hover:bg-accent rounded"
@@ -206,15 +370,7 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
-          {selectedFile ? (
-            <article className="prose prose-invert prose-sm max-w-none">
-              <ReactMarkdown>{fileContent}</ReactMarkdown>
-            </article>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              Select a file from the tree to view its contents.
-            </div>
-          )}
+          <FileContentView />
         </div>
       </div>
     </div>
@@ -225,7 +381,7 @@ export function FileBrowser({ className, initialFile, workspace }: FileBrowserPr
   }
 
   return (
-    <div className={cn('bg-card border border-border rounded-lg overflow-hidden', className)}>
+    <div className={cn('glass-card overflow-hidden', className)}>
       {content}
     </div>
   );
