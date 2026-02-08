@@ -1,14 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import {
-  DndContext,
   closestCenter,
+  DndContext,
+  DragEndEvent,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -18,12 +17,14 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Plus, Target, ExternalLink } from 'lucide-react';
+import { ExternalLink, GripVertical, Plus, Target } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BlockingItem, extractBlockingItems, Goal, parseGoals } from '../lib/goals';
 import { cn } from '../lib/utils';
-import { Goal, BlockingItem, parseGoals, extractBlockingItems } from '../lib/goals';
 
 interface GoalsTrackerProps {
   className?: string;
+  workspace?: string | null;
 }
 
 function SortableGoalRow({ goal, onSelect }: { goal: Goal; onSelect: (id: string) => void }) {
@@ -81,10 +82,10 @@ function SortableGoalRow({ goal, onSelect }: { goal: Goal; onSelect: (id: string
           <span className="font-mono text-xs text-muted-foreground">{goal.id}</span>
           <span className="text-sm font-medium truncate">{goal.title}</span>
         </div>
-        
+
         {/* Progress Bar */}
         <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-          <div 
+          <div
             className={cn(
               'h-full rounded-full transition-all',
               goal.progress === 100 ? 'bg-green-500' : 'bg-primary'
@@ -130,13 +131,14 @@ function BlockingItemRow({ item }: { item: BlockingItem }) {
   );
 }
 
-export function GoalsTracker({ className }: GoalsTrackerProps) {
+export function GoalsTracker({ className, workspace }: GoalsTrackerProps) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [blockingItems, setBlockingItems] = useState<BlockingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newGoalDraft, setNewGoalDraft] = useState('');
-
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -145,12 +147,18 @@ export function GoalsTracker({ className }: GoalsTrackerProps) {
   );
 
   useEffect(() => {
-    fetchGoals();
-  }, []);
+    if (workspace) {
+      setGoals([]);
+      setBlockingItems([]);
+      setLoading(true);
+      fetchGoals();
+    }
+  }, [workspace]);
 
   async function fetchGoals() {
+    if (!workspace) return;
     try {
-      const res = await fetch('/api/files/read?path=GOALS.md');
+      const res = await fetch(`/api/files/read?path=GOALS.md&workspace=${encodeURIComponent(workspace)}`);
       if (res.ok) {
         const data = await res.json();
         const parsedGoals = parseGoals(data.content);
@@ -222,7 +230,7 @@ export function GoalsTracker({ className }: GoalsTrackerProps) {
             >
               <SortableContext items={activeGoals.map(g => g.id)} strategy={verticalListSortingStrategy}>
                 {activeGoals.map((goal) => (
-                  <SortableGoalRow key={goal.id} goal={goal} onSelect={() => {}} />
+                  <SortableGoalRow key={goal.id} goal={goal} onSelect={() => { }} />
                 ))}
               </SortableContext>
             </DndContext>

@@ -1,27 +1,64 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
+import {
+  closestCenter,
+  DndContext,
+  DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   AlertTriangle,
   CheckCircle2,
-  XCircle,
-  RefreshCw,
+  ChevronDown,
+  GitPullRequest,
+  GripVertical,
   Menu,
-  X,
+  Plus,
   Settings,
-  Zap,
-  GitPullRequest
+  Trash2,
+  X,
+  XCircle,
+  Zap
 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { useCallback, useEffect, useState } from 'react';
 import { FileBrowser } from '../components/FileBrowser';
 import { GoalsTracker } from '../components/GoalsTracker';
-import { SubAgentsPanel } from '../components/SubAgentsPanel';
 import { PRQueue } from '../components/PRQueue';
+import { SubAgentsPanel } from '../components/SubAgentsPanel';
+import { WorkspaceSearch } from '../components/WorkspaceSearch';
 import { useGatewayStream } from '../hooks/useGatewayStream';
-import { computeAlerts, Alert } from '../lib/alerts';
+import { Alert, computeAlerts } from '../lib/alerts';
 import { parseGoals } from '../lib/goals';
+import { cn } from '../lib/utils';
 
-// Alert level indicator
+// Types
+interface Workspace {
+  id: string;
+  label: string;
+  path: string;
+}
+
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 5000) return 'just now';
+  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  return `${Math.floor(diff / 3600000)}h ago`;
+}
+
+// --- Small Components ---
+
 function AlertLevel({ level }: { level: string }) {
   const config: Record<string, string> = {
     red: 'bg-red-500',
@@ -33,7 +70,6 @@ function AlertLevel({ level }: { level: string }) {
   );
 }
 
-// Alert Row component  
 function AlertRow({ alert }: { alert: Alert }) {
   return (
     <div className="flex items-start gap-3 p-3 hover:bg-accent/50 rounded-lg transition-colors">
@@ -46,16 +82,15 @@ function AlertRow({ alert }: { alert: Alert }) {
   );
 }
 
-// Stats card
-function StatCard({ label, value, icon: Icon, trend, onClick }: { 
-  label: string; 
-  value: number | string; 
+function StatCard({ label, value, icon: Icon, trend, onClick }: {
+  label: string;
+  value: number | string;
   icon: React.ElementType;
   trend?: 'up' | 'down' | 'neutral';
   onClick?: () => void;
 }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className={cn(
         'bg-card border border-border rounded-lg p-4 text-left transition-colors',
@@ -77,115 +112,418 @@ function StatCard({ label, value, icon: Icon, trend, onClick }: {
   );
 }
 
-// Quick command bar
-function QuickCommand() {
-  const [command, setCommand] = useState('');
-  
-  async function handleCommand(cmd: string) {
-    console.log('Execute command:', cmd);
-    // TODO: Send to session or execute action
-    setCommand('');
+// --- Workspace Selector ---
+
+function WorkspaceSelector({ workspaces, active, onSelect }: {
+  workspaces: Workspace[];
+  active: Workspace | null;
+  onSelect: (ws: Workspace) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  if (workspaces.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground px-3 py-2">
+        No workspaces configured
+      </div>
+    );
   }
-  
+
   return (
-    <div className="flex items-center gap-2 bg-muted/50 border border-border rounded-lg px-3 py-2">
-      <Zap className="w-4 h-4 text-primary" />
-      <input
-        type="text"
-        placeholder="Quick command... (e.g., 'check PR 266', 'spawn research agent')"
-        className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-        value={command}
-        onChange={(e) => setCommand(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && command.trim()) {
-            handleCommand(command.trim());
-          }
-        }}
-      />
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent/50 hover:bg-accent transition-colors border border-border/50 min-w-[160px]"
+      >
+        <span className="text-sm font-medium truncate">{active?.label || 'Select workspace'}</span>
+        <ChevronDown className={cn('w-4 h-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-xl z-50 min-w-[220px] py-1">
+            {workspaces.map((ws) => (
+              <button
+                key={ws.id}
+                onClick={() => { onSelect(ws); setOpen(false); }}
+                className={cn(
+                  'w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2',
+                  active?.id === ws.id && 'bg-primary/10 text-primary'
+                )}
+              >
+                <span className="truncate">{ws.label}</span>
+                {active?.id === ws.id && <CheckCircle2 className="w-3.5 h-3.5 ml-auto shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
+// --- Settings Panel: Sortable Workspace Row ---
+
+function SortableWorkspaceRow({ ws, onRemove }: { ws: Workspace; onRemove: (id: string) => void }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: ws.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'flex items-center gap-2 p-2 rounded-lg border border-border bg-card',
+        isDragging && 'opacity-70 shadow-lg'
+      )}
+    >
+      <button
+        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium truncate">{ws.label}</div>
+        <div className="text-xs text-muted-foreground font-mono truncate">{ws.path}</div>
+      </div>
+      <button
+        onClick={() => onRemove(ws.id)}
+        className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
+        title="Remove workspace"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// --- Settings Modal ---
+
+function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
+  workspaces: Workspace[];
+  onSave: (workspaces: Workspace[]) => void;
+  onClose: () => void;
+  connected: boolean;
+  connecting: boolean;
+}) {
+  const [editableWorkspaces, setEditableWorkspaces] = useState<Workspace[]>(workspaces);
+  const [newLabel, setNewLabel] = useState('');
+  const [newPath, setNewPath] = useState('');
+  const [dirty, setDirty] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setEditableWorkspaces(items => {
+        const oldIndex = items.findIndex(i => i.id === active.id);
+        const newIndex = items.findIndex(i => i.id === over.id);
+        setDirty(true);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  }
+
+  function handleRemove(id: string) {
+    setEditableWorkspaces(prev => prev.filter(ws => ws.id !== id));
+    setDirty(true);
+  }
+
+  function handleAdd() {
+    if (!newLabel.trim() || !newPath.trim()) return;
+    const id = newLabel.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+    setEditableWorkspaces(prev => [...prev, { id, label: newLabel.trim(), path: newPath.trim() }]);
+    setNewLabel('');
+    setNewPath('');
+    setDirty(true);
+  }
+
+  function handleSave() {
+    onSave(editableWorkspaces);
+    setDirty(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-lg mx-4 space-y-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-lg">Settings</h2>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
+        </div>
+
+        {/* Gateway Info */}
+        <div className="space-y-3 text-sm">
+          <div>
+            <label className="text-xs text-muted-foreground">Gateway URL</label>
+            <div className="bg-muted rounded px-3 py-2 font-mono text-xs break-all">
+              {process.env.NEXT_PUBLIC_OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789'}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Gateway Status</label>
+            <div className="flex items-center gap-2">
+              <div className={cn('w-2 h-2 rounded-full', connected ? 'bg-green-500' : 'bg-gray-500')} />
+              <span>{connected ? 'Connected' : connecting ? 'Connecting...' : 'Disconnected'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Workspaces Section */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2">Agent Workspaces</h3>
+          <p className="text-xs text-muted-foreground mb-3">Drag to reorder priority. First workspace is the default.</p>
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={editableWorkspaces.map(w => w.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-2">
+                {editableWorkspaces.map(ws => (
+                  <SortableWorkspaceRow key={ws.id} ws={ws} onRemove={handleRemove} />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+
+          {editableWorkspaces.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">
+              No workspaces configured. Add one below.
+            </div>
+          )}
+
+          {/* Add Workspace */}
+          <div className="mt-3 space-y-2 p-3 border border-border rounded-lg bg-muted/30">
+            <div className="text-xs font-medium text-muted-foreground">Add Workspace</div>
+            <input
+              type="text"
+              placeholder="Label (e.g. Rocket 🚀)"
+              className="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:border-primary/50"
+              value={newLabel}
+              onChange={e => setNewLabel(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Path (e.g. /home/neg0/.openclaw/workspace-rocket)"
+              className="w-full bg-background border border-border rounded px-3 py-1.5 text-sm font-mono outline-none focus:border-primary/50"
+              value={newPath}
+              onChange={e => setNewPath(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            />
+            <button
+              onClick={handleAdd}
+              disabled={!newLabel.trim() || !newPath.trim()}
+              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded bg-accent hover:bg-accent/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add
+            </button>
+          </div>
+        </div>
+
+        {/* Save */}
+        {dirty && (
+          <button
+            onClick={handleSave}
+            className="w-full py-2 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+          >
+            Save Changes
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Main Page ---
 
 export default function MissionControl() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'files' | 'prs' | 'goals'>('goals');
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [searchSelectedFile, setSearchSelectedFile] = useState<string | null>(null);
+  const [lastSyncTs, setLastSyncTs] = useState<number>(Date.now());
+  const [lastSyncLabel, setLastSyncLabel] = useState('just now');
+  const [showSettings, setShowSettings] = useState(false);
 
-  // Gateway connection for real-time updates
-  const { connected, connecting, error: gatewayError } = useGatewayStream({
+  // Workspace state
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+
+  // Gateway connection
+  const { connected, connecting } = useGatewayStream({
     onEvent: (event) => {
       console.log('[Gateway Event]', event);
     },
   });
 
-  // Stats (computed from real data)
-  const [stats, setStats] = useState({
-    prsOpen: 0,
-    prsReadyToMerge: 0,
-    prsBlocked: 0,
-    agentsActive: 0,
+  // Stats
+  const [stats, setStats] = useState<{
+    prsOpen: number | null;
+    prsReadyToMerge: number | null;
+    prsBlocked: number | null;
+    agentsActive: number | null;
+  }>({
+    prsOpen: null,
+    prsReadyToMerge: null,
+    prsBlocked: null,
+    agentsActive: null,
   });
 
+  // Load workspaces on mount
   useEffect(() => {
-    let mounted = true;
-
-    async function fetchAlerts() {
+    async function loadWorkspaces() {
       try {
-        const [prsRes, goalsRes, agentsRes] = await Promise.all([
-          fetch('/api/github/prs?repo=neg-0/comp-iq'),
-          fetch('/api/files/read?path=GOALS.md'),
-          fetch('/api/sessions'),
-        ]);
-
-        const prsData = prsRes.ok ? await prsRes.json() : { prs: [] };
-        const goalsData = goalsRes.ok ? await goalsRes.json() : { content: '' };
-        const agentsData = agentsRes.ok ? await agentsRes.json() : { sessions: [] };
-
-        const prs = prsData.prs || [];
-        const goals = parseGoals(goalsData.content || '');
-        const agents = (agentsData.sessions || []).map((session: { sessionKey: string; status: string; lastActivityMs?: number; label?: string }) => ({
-          id: session.sessionKey,
-          status: session.status === 'active' ? 'running' : (session.status as 'running' | 'completed' | 'failed' | 'idle'),
-          lastActivityMs: session.lastActivityMs,
-          label: session.label,
-        }));
-
-        if (!mounted) return;
-
-        setAlerts(computeAlerts(prs, goals, agents));
-        setStats({
-          prsOpen: prs.length,
-          prsReadyToMerge: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'approved' && p.ci === 'passing').length,
-          prsBlocked: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'changes_requested' || p.ci === 'failed').length,
-          agentsActive: agents.filter((a: { status: string }) => a.status === 'running').length,
-        });
+        const res = await fetch('/api/workspaces');
+        if (res.ok) {
+          const data: Workspace[] = await res.json();
+          setWorkspaces(data);
+          if (data.length > 0 && !activeWorkspace) {
+            setActiveWorkspace(data[0]);
+          }
+        }
       } catch (e) {
-        console.error('Failed to compute alerts:', e);
+        console.error('Failed to load workspaces:', e);
       }
     }
+    loadWorkspaces();
+  }, []);
 
+  // Update "last sync" label
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLastSyncLabel(formatRelativeTime(lastSyncTs));
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [lastSyncTs]);
+
+  // Fetch alerts and stats
+  const fetchAlerts = useCallback(async () => {
+    const wsPath = activeWorkspace?.path;
+    try {
+      const fetchArgs = wsPath
+        ? [
+          fetch('/api/github/prs?repo=neg-0/comp-iq'),
+          fetch(`/api/files/read?path=GOALS.md&workspace=${encodeURIComponent(wsPath)}`),
+          fetch('/api/sessions'),
+        ]
+        : [
+          fetch('/api/github/prs?repo=neg-0/comp-iq'),
+          Promise.resolve(new Response(JSON.stringify({ content: '' }))),
+          fetch('/api/sessions'),
+        ];
+
+      const [prsRes, goalsRes, agentsRes] = await Promise.all(fetchArgs);
+
+      const prsData = prsRes.ok ? await prsRes.json() : { prs: [] };
+      const goalsData = goalsRes.ok ? await goalsRes.json() : { content: '' };
+      const agentsData = agentsRes.ok ? await agentsRes.json() : { sessions: [] };
+
+      const prs = prsData.prs || [];
+      const goals = parseGoals(goalsData.content || '');
+      const agents = (agentsData.sessions || []).map((session: { sessionKey: string; status: string; lastActivityMs?: number; label?: string }) => ({
+        id: session.sessionKey,
+        status: session.status === 'active' ? 'running' : (session.status as 'running' | 'completed' | 'failed' | 'idle'),
+        lastActivityMs: session.lastActivityMs,
+        label: session.label,
+      }));
+
+      setAlerts(computeAlerts(prs, goals, agents));
+      setStats({
+        prsOpen: prs.length,
+        prsReadyToMerge: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'approved' && p.ci === 'passing').length,
+        prsBlocked: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'changes_requested' || p.ci === 'failed').length,
+        agentsActive: agents.filter((a: { status: string }) => a.status === 'running' || a.status === 'active').length,
+      });
+      setLastSyncTs(Date.now());
+      setLastSyncLabel('just now');
+    } catch (e) {
+      console.error('Failed to compute alerts:', e);
+    }
+  }, [activeWorkspace]);
+
+  useEffect(() => {
     fetchAlerts();
     const interval = setInterval(fetchAlerts, 120000);
+    return () => clearInterval(interval);
+  }, [fetchAlerts]);
 
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+  // Handle workspace switch
+  function switchWorkspace(ws: Workspace) {
+    setActiveWorkspace(ws);
+    setSearchSelectedFile(null);
+  }
+
+  // Save workspaces from settings
+  async function saveWorkspaces(updated: Workspace[]) {
+    try {
+      const res = await fetch('/api/workspaces', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      if (res.ok) {
+        setWorkspaces(updated);
+        // If active workspace was removed, switch to first
+        if (activeWorkspace && !updated.find(w => w.id === activeWorkspace.id)) {
+          setActiveWorkspace(updated[0] || null);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to save workspaces:', e);
+    }
+  }
+
+  // Handle search result selecting a file (possibly from another workspace)
+  function handleSearchSelect(filePath: string, workspacePath: string) {
+    // Switch workspace if needed
+    const targetWs = workspaces.find(w => w.path === workspacePath);
+    if (targetWs && targetWs.id !== activeWorkspace?.id) {
+      setActiveWorkspace(targetWs);
+    }
+    setSearchSelectedFile(filePath);
+    setActiveTab('files');
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-12">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">🚀</span>
-            <h1 className="font-bold text-lg">Mission Control</h1>
+        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center">
+          {/* Left: Workspace Selector */}
+          <div className="flex-1 flex items-center">
+            <WorkspaceSelector
+              workspaces={workspaces}
+              active={activeWorkspace}
+              onSelect={switchWorkspace}
+            />
           </div>
-          
-          {/* System Status */}
-          <div className="hidden md:flex items-center gap-4">
-            <div className="flex items-center gap-2">
+
+          {/* Center: Title */}
+          <h1 className="text-xl font-bold tracking-[0.25em] uppercase text-foreground select-none">
+            Mission Control
+          </h1>
+
+          {/* Right: Status + Settings */}
+          <div className="flex-1 flex items-center justify-end gap-3">
+            <div className="hidden md:flex items-center gap-2">
               <div className={cn(
                 'w-2 h-2 rounded-full',
                 connected ? 'bg-green-500' : connecting ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'
@@ -194,117 +532,151 @@ export default function MissionControl() {
                 {connected ? 'Live' : connecting ? 'Connecting...' : 'Offline'}
               </span>
             </div>
-            <button className="p-2 hover:bg-accent rounded-lg" title="Settings">
+            <button className="p-2 hover:bg-accent rounded-lg" title="Settings" onClick={() => setShowSettings(true)}>
               <Settings className="w-4 h-4" />
             </button>
+
+            {/* Mobile menu toggle */}
+            <button
+              className="md:hidden p-2 hover:bg-accent rounded-lg"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
-          
-          {/* Mobile menu toggle */}
-          <button 
-            className="md:hidden p-2 hover:bg-accent rounded-lg"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
         </div>
       </header>
 
       <main className="max-w-[1600px] mx-auto px-4 py-4">
-        {/* Quick Command Bar */}
-        <div className="mb-4">
-          <QuickCommand />
-        </div>
-
-        {/* Alert Banner */}
-        {alerts.length > 0 && (
-          <div className={cn(
-            'mb-4 border rounded-lg px-4 py-3 flex items-center gap-3',
-            alerts.some(a => a.level === 'red')
-              ? 'bg-red-500/10 border-red-500/40 text-red-200'
-              : alerts.some(a => a.level === 'yellow')
-                ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-200'
-                : 'bg-green-500/10 border-green-500/40 text-green-200'
-          )}>
-            <AlertTriangle className="w-4 h-4" />
-            <span className="text-sm font-medium">
-              {alerts.find(a => a.level === 'red')?.message ||
-                alerts.find(a => a.level === 'yellow')?.message ||
-                alerts[0].message}
-            </span>
-          </div>
-        )}
-
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <StatCard label="PRs Open" value={stats.prsOpen || '—'} icon={GitPullRequest} />
-          <StatCard label="Ready to Merge" value={stats.prsReadyToMerge || '—'} icon={CheckCircle2} trend={stats.prsReadyToMerge > 0 ? 'up' : undefined} />
-          <StatCard label="Blocked" value={stats.prsBlocked || '—'} icon={XCircle} trend={stats.prsBlocked > 0 ? 'down' : undefined} />
-          <StatCard label="Agents Active" value={stats.agentsActive || '—'} icon={Zap} />
-        </div>
-
-        {/* Mobile Tab Selector */}
-        <div className="md:hidden flex gap-2 mb-4 overflow-x-auto pb-2">
-          {(['goals', 'files', 'prs'] as const).map((tab) => (
+        {/* No workspaces empty state */}
+        {workspaces.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="text-4xl mb-4">🛰️</div>
+            <h2 className="text-lg font-semibold mb-2">No workspaces configured</h2>
+            <p className="text-sm text-muted-foreground mb-4">Add an agent workspace in Settings to get started.</p>
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                'px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
-                activeTab === tab 
-                  ? 'bg-primary text-primary-foreground' 
-                  : 'bg-accent text-muted-foreground'
-              )}
+              onClick={() => setShowSettings(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
             >
-              {tab === 'files' && '📁 Files'}
-              {tab === 'prs' && '📋 PRs'}
-              {tab === 'goals' && '🎯 Goals'}
+              <Settings className="w-4 h-4" /> Open Settings
             </button>
-          ))}
-        </div>
-
-        {/* Main 3-Column Grid */}
-        <div className="grid md:grid-cols-12 gap-4">
-          {/* Left Column: Files */}
-          <div className={cn(
-            'md:col-span-3',
-            activeTab !== 'files' && 'hidden md:block'
-          )}>
-            <FileBrowser className="h-[600px]" />
           </div>
+        ) : (
+          <>
+            {/* Workspace Search */}
+            <div className="mb-4">
+              <WorkspaceSearch
+                onSelectFile={handleSearchSelect}
+              />
+            </div>
 
-          {/* Center Column: Goals + Sub-Agents */}
-          <div className={cn(
-            'md:col-span-5 space-y-4',
-            activeTab !== 'goals' && 'hidden md:block'
-          )}>
-            <GoalsTracker />
-            <SubAgentsPanel />
-          </div>
-
-          {/* Right Column: PRs + Alerts */}
-          <div className={cn(
-            'md:col-span-4 space-y-4',
-            activeTab !== 'prs' && 'hidden md:block'
-          )}>
-            <PRQueue />
-
-            {/* Alerts */}
+            {/* Alert Banner */}
             {alerts.length > 0 && (
-              <div className="bg-card border border-border rounded-lg overflow-hidden">
-                <div className="p-3 border-b border-border flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-orange-400" />
-                  <h2 className="font-semibold">Alerts</h2>
-                </div>
-                <div className="p-2">
-                  {alerts.map((alert) => (
-                    <AlertRow key={alert.id} alert={alert} />
-                  ))}
-                </div>
+              <div className={cn(
+                'mb-4 border rounded-lg px-4 py-3 flex items-center gap-3',
+                alerts.some(a => a.level === 'red')
+                  ? 'bg-red-500/10 border-red-500/40 text-red-200'
+                  : alerts.some(a => a.level === 'yellow')
+                    ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-200'
+                    : 'bg-green-500/10 border-green-500/40 text-green-200'
+              )}>
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-sm font-medium">
+                  {alerts.find(a => a.level === 'red')?.message ||
+                    alerts.find(a => a.level === 'yellow')?.message ||
+                    alerts[0].message}
+                </span>
               </div>
             )}
-          </div>
-        </div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <StatCard label="PRs Open" value={stats.prsOpen ?? '—'} icon={GitPullRequest} />
+              <StatCard label="Ready to Merge" value={stats.prsReadyToMerge ?? '—'} icon={CheckCircle2} trend={stats.prsReadyToMerge != null && stats.prsReadyToMerge > 0 ? 'up' : undefined} />
+              <StatCard label="Blocked" value={stats.prsBlocked ?? '—'} icon={XCircle} trend={stats.prsBlocked != null && stats.prsBlocked > 0 ? 'down' : undefined} />
+              <StatCard label="Agents Active" value={stats.agentsActive ?? '—'} icon={Zap} />
+            </div>
+
+            {/* Mobile Tab Selector */}
+            <div className="md:hidden flex gap-2 mb-4 overflow-x-auto pb-2">
+              {(['goals', 'files', 'prs'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    'px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
+                    activeTab === tab
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-accent text-muted-foreground'
+                  )}
+                >
+                  {tab === 'files' && '📁 Files'}
+                  {tab === 'prs' && '📋 PRs'}
+                  {tab === 'goals' && '🎯 Goals'}
+                </button>
+              ))}
+            </div>
+
+            {/* Main 3-Column Grid */}
+            <div className="grid md:grid-cols-12 gap-4">
+              {/* Left Column: Files */}
+              <div className={cn(
+                'md:col-span-3',
+                activeTab !== 'files' && 'hidden md:block'
+              )}>
+                <FileBrowser
+                  className="h-[600px]"
+                  initialFile={searchSelectedFile}
+                  workspace={activeWorkspace?.path}
+                />
+              </div>
+
+              {/* Center Column: Goals + Sub-Agents */}
+              <div className={cn(
+                'md:col-span-5 space-y-4',
+                activeTab !== 'goals' && 'hidden md:block'
+              )}>
+                <GoalsTracker workspace={activeWorkspace?.path} />
+                <SubAgentsPanel />
+              </div>
+
+              {/* Right Column: PRs + Alerts */}
+              <div className={cn(
+                'md:col-span-4 space-y-4',
+                activeTab !== 'prs' && 'hidden md:block'
+              )}>
+                <PRQueue />
+
+                {/* Alerts */}
+                {alerts.length > 0 && (
+                  <div className="bg-card border border-border rounded-lg overflow-hidden">
+                    <div className="p-3 border-b border-border flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-orange-400" />
+                      <h2 className="font-semibold">Alerts</h2>
+                    </div>
+                    <div className="p-2">
+                      {alerts.map((alert) => (
+                        <AlertRow key={alert.id} alert={alert} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          workspaces={workspaces}
+          onSave={saveWorkspaces}
+          onClose={() => setShowSettings(false)}
+          connected={connected}
+          connecting={connecting}
+        />
+      )}
 
       {/* Footer Status Bar */}
       <footer className="fixed bottom-0 left-0 right-0 bg-card border-t border-border px-4 py-2">
@@ -315,10 +687,10 @@ export default function MissionControl() {
             )}>
               {connected ? '🟢' : '⚪'} Gateway: {connected ? 'Connected' : 'Disconnected'}
             </span>
-            <span>📁 /home/node/.openclaw/workspace</span>
+            <span>📁 {activeWorkspace?.path || 'No workspace selected'}</span>
           </div>
           <div className="flex items-center gap-4">
-            <span>Last sync: just now</span>
+            <span>Last sync: {lastSyncLabel}</span>
           </div>
         </div>
       </footer>
@@ -326,5 +698,4 @@ export default function MissionControl() {
   );
 }
 
-// Force dynamic rendering (uses hooks)
 export const dynamic = 'force-dynamic';

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen, Maximize2, X } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { ChevronDown, ChevronRight, File, Folder, FolderOpen, Maximize2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { cn } from '../lib/utils';
 
 interface FileNode {
   name: string;
@@ -14,9 +14,11 @@ interface FileNode {
 
 interface FileBrowserProps {
   className?: string;
+  initialFile?: string | null;
+  workspace?: string | null;
 }
 
-export function FileBrowser({ className }: FileBrowserProps) {
+export function FileBrowser({ className, initialFile, workspace }: FileBrowserProps) {
   const [tree, setTree] = useState<FileNode[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>('');
@@ -25,14 +27,37 @@ export function FileBrowser({ className }: FileBrowserProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [modifiedFiles, setModifiedFiles] = useState<Set<string>>(new Set());
 
-  // Fetch file tree on mount
+  // Refetch tree when workspace changes
   useEffect(() => {
-    fetchTree();
-  }, []);
+    if (workspace) {
+      setTree([]);
+      setSelectedFile(null);
+      setFileContent('');
+      setExpanded(new Set(['']));
+      setLoading(true);
+      fetchTree();
+    }
+  }, [workspace]);
+
+  // Navigate to file from external source (e.g. search)
+  useEffect(() => {
+    if (initialFile) {
+      const parts = initialFile.split('/');
+      const newExpanded = new Set(expanded);
+      let path = '';
+      for (let i = 0; i < parts.length - 1; i++) {
+        path = path ? `${path}/${parts[i]}` : parts[i];
+        newExpanded.add(path);
+      }
+      setExpanded(newExpanded);
+      loadFile(initialFile);
+    }
+  }, [initialFile]);
 
   async function fetchTree() {
+    if (!workspace) return;
     try {
-      const res = await fetch('/api/files/tree');
+      const res = await fetch(`/api/files/tree?workspace=${encodeURIComponent(workspace)}`);
       if (res.ok) {
         const data = await res.json();
         setTree(data);
@@ -45,13 +70,13 @@ export function FileBrowser({ className }: FileBrowserProps) {
   }
 
   async function loadFile(path: string) {
+    if (!workspace) return;
     try {
-      const res = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
+      const res = await fetch(`/api/files/read?path=${encodeURIComponent(path)}&workspace=${encodeURIComponent(workspace)}`);
       if (res.ok) {
         const data = await res.json();
         setFileContent(data.content);
         setSelectedFile(path);
-        // Clear modified indicator when viewing
         setModifiedFiles(prev => {
           const next = new Set(prev);
           next.delete(path);
@@ -79,7 +104,7 @@ export function FileBrowser({ className }: FileBrowserProps) {
     const isExpanded = expanded.has(node.path);
     const isSelected = selectedFile === node.path;
     const isModified = modifiedFiles.has(node.path);
-    
+
     if (node.type === 'directory') {
       return (
         <div>
@@ -132,6 +157,16 @@ export function FileBrowser({ className }: FileBrowserProps) {
     );
   }
 
+  if (!workspace) {
+    return (
+      <div className={cn('bg-card border border-border rounded-lg overflow-hidden flex items-center justify-center', className)}>
+        <div className="text-sm text-muted-foreground p-8 text-center">
+          No workspace selected. Add one in Settings ⚙
+        </div>
+      </div>
+    );
+  }
+
   const content = (
     <div className={cn('flex h-full', fullscreen && 'fixed inset-0 z-50 bg-background')}>
       {/* File Tree */}
@@ -161,8 +196,8 @@ export function FileBrowser({ className }: FileBrowserProps) {
             {selectedFile || 'Select a file'}
           </span>
           <div className="flex items-center gap-1">
-            <button 
-              onClick={() => setFullscreen(!fullscreen)} 
+            <button
+              onClick={() => setFullscreen(!fullscreen)}
               className="p-1 hover:bg-accent rounded"
               title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >

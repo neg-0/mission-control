@@ -1,33 +1,8 @@
+import { readdir } from 'fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import path from 'path';
 
-const execAsync = promisify(exec);
-
-const WORKSPACE_ROOT = process.env.WORKSPACE_PATH || '/home/node/.openclaw/workspace';
-
-export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const rootPath = searchParams.get('path') || WORKSPACE_ROOT;
-  const depth = parseInt(searchParams.get('depth') || '3');
-
-  try {
-    // Get file tree using find, excluding node_modules and .git
-    const { stdout } = await execAsync(
-      `find "${rootPath}" -maxdepth ${depth} \\( -name "node_modules" -o -name ".git" -o -name ".next" \\) -prune -o -type f -name "*.md" -print | head -100`
-    );
-    
-    const files = stdout.trim().split('\n').filter(Boolean);
-    
-    // Build tree structure
-    const tree = buildTree(files, rootPath);
-    
-    return NextResponse.json(tree);
-  } catch (error) {
-    console.error('Failed to get file tree:', error);
-    return NextResponse.json({ error: 'Failed to get file tree' }, { status: 500 });
-  }
-}
+const IGNORED_DIRS = new Set(['node_modules', '.git', '.next', '__pycache__', '.venv', 'dist', 'build']);
 
 interface TreeNode {
   name: string;
@@ -36,56 +11,69 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-function buildTree(files: string[], rootPath: string): TreeNode[] {
-  const root: TreeNode[] = [];
-  const nodeMap = new Map<string, TreeNode>();
+async function scanDir(dirPath: string, relativePath: string, depth: number, maxDepth: number): Promise<TreeNode[]> {
+  if (depth > maxDepth) return [];
 
-  // Create root node
-  nodeMap.set('', { name: 'workspace', path: '', type: 'directory', children: [] });
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+    const nodes: TreeNode[] = [];
 
-  for (const filePath of files) {
-    const relativePath = filePath.replace(rootPath + '/', '');
-    const parts = relativePath.split('/');
-    
-    let currentPath = '';
-    
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const parentPath = currentPath;
-      currentPath = currentPath ? `${currentPath}/${part}` : part;
-      
-      if (!nodeMap.has(currentPath)) {
-        const isFile = i === parts.length - 1;
-        const node: TreeNode = {
-          name: part,
-          path: currentPath,
-          type: isFile ? 'file' : 'directory',
-          children: isFile ? undefined : [],
-        };
-        nodeMap.set(currentPath, node);
-        
-        // Add to parent
-        const parent = nodeMap.get(parentPath);
-        if (parent?.children) {
-          parent.children.push(node);
-        } else {
-          root.push(node);
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') && entry.name !== '.env') continue;
+      if (IGNORED_DIRS.has(entry.name)) continue;
+
+      const entryRelPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+
+      if (entry.isDirectory()) {
+        const children = await scanDir(
+          path.join(dirPath, entry.name),
+          entryRelPath,
+          depth + 1,
+          maxDepth
+        );
+        if (children.length > 0) {
+          nodes.push({
+            name: entry.name,
+            path: entryRelPath,
+            type: 'directory',
+            children,
+          });
         }
+      } else if (entry.name.endsWith('.md')) {
+        nodes.push({
+          name: entry.name,
+          path: entryRelPath,
+          type: 'file',
+        });
       }
     }
-  }
 
-  // Sort children: directories first, then alphabetically
-  function sortChildren(nodes: TreeNode[]) {
     nodes.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-    nodes.forEach(node => {
-      if (node.children) sortChildren(node.children);
-    });
+
+    return nodes;
+  } catch (error) {
+    console.error(`Failed to scan directory ${dirPath}:`, error);
+    return [];
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+  const workspace = searchParams.get('workspace') || '';
+  const depth = parseInt(searchParams.get('depth') || '3');
+
+  if (!workspace) {
+    return NextResponse.json({ error: 'workspace param required' }, { status: 400 });
   }
 
-  sortChildren(root);
-  return root;
+  try {
+    const tree = await scanDir(workspace, '', 0, depth);
+    return NextResponse.json(tree);
+  } catch (error) {
+    console.error('Failed to read directory:', error);
+    return NextResponse.json({ error: 'Failed to read directory' }, { status: 500 });
+  }
 }

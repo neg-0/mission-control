@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface GatewayEvent {
   type: string;
@@ -24,17 +24,28 @@ export interface GatewayStreamState {
 }
 
 export function useGatewayStream(options: UseGatewayStreamOptions = {}) {
-  const { onEvent, onConnect, onDisconnect, onError, autoConnect = true } = options;
-  
+  const { autoConnect = true } = options;
+
   const [state, setState] = useState<GatewayStreamState>({
     connected: false,
     connecting: false,
     lastEvent: null,
     error: null,
   });
-  
+
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Use refs for callbacks to keep the connect function stable across renders
+  const onEventRef = useRef(options.onEvent);
+  const onConnectRef = useRef(options.onConnect);
+  const onDisconnectRef = useRef(options.onDisconnect);
+  const onErrorRef = useRef(options.onError);
+
+  useEffect(() => { onEventRef.current = options.onEvent; }, [options.onEvent]);
+  useEffect(() => { onConnectRef.current = options.onConnect; }, [options.onConnect]);
+  useEffect(() => { onDisconnectRef.current = options.onDisconnect; }, [options.onDisconnect]);
+  useEffect(() => { onErrorRef.current = options.onError; }, [options.onError]);
 
   const connect = useCallback(() => {
     if (eventSourceRef.current) {
@@ -49,21 +60,21 @@ export function useGatewayStream(options: UseGatewayStreamOptions = {}) {
     eventSource.onmessage = (event) => {
       try {
         const parsed: GatewayEvent = JSON.parse(event.data);
-        
+
         setState(s => ({ ...s, lastEvent: parsed }));
-        onEvent?.(parsed);
+        onEventRef.current?.(parsed);
 
         // Handle specific event types
         if (parsed.type === 'connected') {
           setState(s => ({ ...s, connected: true, connecting: false }));
-          onConnect?.();
+          onConnectRef.current?.();
         } else if (parsed.type === 'disconnected') {
           setState(s => ({ ...s, connected: false }));
-          onDisconnect?.();
+          onDisconnectRef.current?.();
         } else if (parsed.type === 'error') {
           const errorMsg = (parsed.data as { message?: string })?.message || 'Unknown error';
           setState(s => ({ ...s, error: errorMsg }));
-          onError?.(errorMsg);
+          onErrorRef.current?.(errorMsg);
         }
       } catch (e) {
         console.error('[useGatewayStream] Failed to parse event:', e);
@@ -71,10 +82,14 @@ export function useGatewayStream(options: UseGatewayStreamOptions = {}) {
     };
 
     eventSource.onerror = () => {
+      // Avoid infinite error loop if closed
+      if (eventSource.readyState === EventSource.CLOSED) return;
+
+      eventSource.close();
       setState(s => ({ ...s, connected: false, connecting: false, error: 'Connection lost' }));
-      onDisconnect?.();
-      
-      // Attempt reconnect after 3 seconds
+      onDisconnectRef.current?.();
+
+      // Attempt reconnect after 5 seconds
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
@@ -82,9 +97,9 @@ export function useGatewayStream(options: UseGatewayStreamOptions = {}) {
         if (autoConnect) {
           connect();
         }
-      }, 3000);
+      }, 5000);
     };
-  }, [onEvent, onConnect, onDisconnect, onError, autoConnect]);
+  }, [autoConnect]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -101,7 +116,7 @@ export function useGatewayStream(options: UseGatewayStreamOptions = {}) {
     if (autoConnect) {
       connect();
     }
-    
+
     return () => {
       disconnect();
     };

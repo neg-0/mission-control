@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import WebSocket from 'ws';
 
 // Force Node.js runtime (not Edge)
 export const runtime = 'nodejs';
@@ -33,12 +34,19 @@ export async function GET(request: NextRequest) {
       let ws: WebSocket | null = null;
       let messageId = 0;
       let connected = false;
+      let connectSent = false;
       let closed = false; // Prevent double-close crashes
       let pingInterval: ReturnType<typeof setInterval> | null = null;
 
       function sendEvent(eventType: string, data: unknown) {
-        const payload = JSON.stringify({ type: eventType, data, ts: Date.now() });
-        controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+        if (closed || controller.desiredSize === null) return;
+        try {
+          const payload = JSON.stringify({ type: eventType, data, ts: Date.now() });
+          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+        } catch (e) {
+          // Controller might be closed
+          closed = true;
+        }
       }
 
       async function readMessageText(data: unknown) {
@@ -56,31 +64,46 @@ export async function GET(request: NextRequest) {
         return String(data ?? '');
       }
 
+      // Send the connect handshake after receiving a challenge nonce
+      function sendConnect() {
+        if (connectSent) return;
+        connectSent = true;
+
+        const connectMsg: GatewayMessage = {
+          type: 'req',
+          id: `m${++messageId}`,
+          method: 'connect',
+          params: {
+            minProtocol: 3,
+            maxProtocol: 3,
+            auth: GATEWAY_TOKEN ? { token: GATEWAY_TOKEN } : undefined,
+            client: {
+              id: 'gateway-client',
+              displayName: 'Mission Control',
+              version: '1.0.0',
+              platform: process.platform,
+              mode: 'backend',
+            },
+            role: 'operator',
+            scopes: ['operator.admin'],
+          },
+        };
+        console.log('[SSE Bridge] Sending connect handshake');
+        ws?.send(JSON.stringify(connectMsg));
+      }
+
       function connect() {
+        connectSent = false;
         try {
-          ws = new WebSocket(GATEWAY_URL);
+          ws = new WebSocket(GATEWAY_URL, {
+            headers: {
+              Origin: 'http://127.0.0.1:18789'
+            }
+          });
 
           ws.addEventListener('open', () => {
-            console.log('[SSE Bridge] Connected to gateway');
-            // Send connect handshake
-            const connectMsg: GatewayMessage = {
-              type: 'req',
-              id: `m${++messageId}`,
-              method: 'connect',
-              params: {
-                minProtocol: 3,
-                maxProtocol: 3,
-                auth: GATEWAY_TOKEN ? { mode: 'token', token: GATEWAY_TOKEN } : undefined,
-                client: {
-                  id: 'mission-control-sse',
-                  displayName: 'Mission Control SSE Bridge',
-                  version: '1.0.0',
-                  platform: 'node',
-                  mode: 'ui',
-                },
-              },
-            };
-            ws?.send(JSON.stringify(connectMsg));
+            console.log('[SSE Bridge] WebSocket open, waiting for challenge...');
+            // Don't send connect yet — wait for the connect.challenge event
           });
 
           ws.addEventListener('message', (event) => {
@@ -88,6 +111,13 @@ export async function GET(request: NextRequest) {
               try {
                 const text = await readMessageText(event.data);
                 const msg: GatewayMessage = JSON.parse(text);
+
+                // Handle connect.challenge: extract nonce and send connect request
+                if (msg.type === 'event' && msg.event === 'connect.challenge') {
+                  console.log('[SSE Bridge] Received challenge, sending connect');
+                  sendConnect();
+                  return;
+                }
 
                 if (msg.type === 'res' && !connected) {
                   // Check for successful connect

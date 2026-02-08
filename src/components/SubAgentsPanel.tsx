@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Bot, Loader2, CheckCircle2, XCircle, Clock, ChevronDown, ChevronRight, Zap } from 'lucide-react';
+import { Bot, CheckCircle2, ChevronDown, ChevronRight, Clock, Loader2, XCircle, Zap } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { GatewayEvent, isAgentEvent, useGatewayStream } from '../hooks/useGatewayStream';
 import { cn } from '../lib/utils';
-import { useGatewayStream, isAgentEvent, GatewayEvent } from '../hooks/useGatewayStream';
 
 interface SubAgent {
   sessionKey: string;
@@ -30,7 +30,7 @@ export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
   const handleEvent = useCallback((event: GatewayEvent) => {
     if (isAgentEvent(event)) {
       const agentData = event.data;
-      
+
       setAgents(prev => {
         const next = new Map(prev);
         const existing = next.get(agentData.sessionKey) || {
@@ -43,9 +43,9 @@ export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
           ...existing,
           label: agentData.label || existing.label,
           task: agentData.task || existing.task,
-          status: agentData.status === 'started' ? 'running' 
-                : agentData.status === 'completed' ? 'completed'
-                : agentData.status === 'failed' ? 'failed'
+          status: agentData.status === 'started' ? 'running'
+            : agentData.status === 'completed' ? 'completed'
+              : agentData.status === 'failed' ? 'failed'
                 : existing.status,
           thinking: agentData.thinking || existing.thinking,
           currentAction: agentData.toolCall?.name || existing.currentAction,
@@ -166,7 +166,7 @@ export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
                 {agent.label || agent.sessionKey}
               </span>
               <span className="text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
-                {agent.model || 'gpt-5.2'}
+                {agent.model || 'unknown'}
               </span>
             </div>
             {agent.task && (
@@ -237,7 +237,7 @@ export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
       <div className="p-3 border-b border-border flex items-center gap-2">
         <Bot className="w-5 h-5 text-primary" />
         <h2 className="font-semibold">Sub-Agents</h2>
-        
+
         {/* Connection Status */}
         <div className="flex items-center gap-1 ml-auto" title={connected ? 'Live updates' : error || 'Disconnected'}>
           {connected ? (
