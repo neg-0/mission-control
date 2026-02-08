@@ -163,6 +163,42 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   LED Status Indicators
+   --------------------------------------------------------------------------- */
+
+.led {
+  border-radius: 50%;
+  box-shadow: 0 0 4px currentColor;
+}
+.led-red {
+  background: #ef4444;
+  color: #ef4444;
+  box-shadow: 0 0 6px #ef4444, 0 0 12px rgba(239, 68, 68, 0.4);
+}
+.led-yellow {
+  background: #eab308;
+  color: #eab308;
+  box-shadow: 0 0 6px #eab308, 0 0 12px rgba(234, 179, 8, 0.4);
+}
+.led-green {
+  background: #22c55e;
+  color: #22c55e;
+  box-shadow: 0 0 6px #22c55e, 0 0 12px rgba(34, 197, 94, 0.4);
+}
+.led-gray {
+  background: #6b7280;
+  color: #6b7280;
+  box-shadow: 0 0 4px rgba(107, 114, 128, 0.3);
+}
+.led-pulse {
+  animation: led-glow 2s ease-in-out infinite alternate;
+}
+@keyframes led-glow {
+  0% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* ---------------------------------------------------------------------------
    Skeleton Shimmer
    --------------------------------------------------------------------------- */
 

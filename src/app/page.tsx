@@ -120,12 +120,20 @@ function StatCard({ label, value, icon: Icon, trend, onClick }: {
 
 // --- Workspace Selector ---
 
-function WorkspaceSelector({ workspaces, active, onSelect }: {
+function WorkspaceSelector({ workspaces, active, onSelect, health }: {
   workspaces: Workspace[];
   active: Workspace | null;
   onSelect: (ws: Workspace) => void;
+  health?: Record<string, 'red' | 'yellow' | 'green' | 'gray'>;
 }) {
   const [open, setOpen] = useState(false);
+
+  const ledColor: Record<string, string> = {
+    red: 'led-red',
+    yellow: 'led-yellow',
+    green: 'led-green',
+    gray: 'led-gray',
+  };
 
   if (workspaces.length === 0) {
     return (
@@ -141,6 +149,9 @@ function WorkspaceSelector({ workspaces, active, onSelect }: {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent/50 hover:bg-accent transition-colors border border-border/50 min-w-[160px]"
       >
+        {active && health?.[active.id] && (
+          <div className={cn('w-2 h-2 led led-pulse shrink-0', ledColor[health[active.id]] || 'led-gray')} />
+        )}
         <span className="text-sm font-medium truncate">{active?.label || 'Select workspace'}</span>
         <ChevronDown className={cn('w-4 h-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
@@ -149,19 +160,23 @@ function WorkspaceSelector({ workspaces, active, onSelect }: {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute top-full left-0 mt-1 glass-card shadow-xl z-50 min-w-[220px] py-1">
-            {workspaces.map((ws) => (
-              <button
-                key={ws.id}
-                onClick={() => { onSelect(ws); setOpen(false); }}
-                className={cn(
-                  'w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2',
-                  active?.id === ws.id && 'bg-primary/10 text-primary'
-                )}
-              >
-                <span className="truncate">{ws.label}</span>
-                {active?.id === ws.id && <CheckCircle2 className="w-3.5 h-3.5 ml-auto shrink-0" />}
-              </button>
-            ))}
+            {workspaces.map((ws) => {
+              const severity = health?.[ws.id] || 'gray';
+              return (
+                <button
+                  key={ws.id}
+                  onClick={() => { onSelect(ws); setOpen(false); }}
+                  className={cn(
+                    'w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2',
+                    active?.id === ws.id && 'bg-primary/10 text-primary'
+                  )}
+                >
+                  <div className={cn('w-2 h-2 led led-pulse shrink-0', ledColor[severity])} />
+                  <span className="truncate">{ws.label}</span>
+                  {active?.id === ws.id && <CheckCircle2 className="w-3.5 h-3.5 ml-auto shrink-0" />}
+                </button>
+              );
+            })}
           </div>
         </>
       )}
@@ -404,6 +419,9 @@ export default function MissionControl() {
     agentsActive: null,
   });
 
+  // Per-workspace health status for LED indicators
+  const [workspaceHealth, setWorkspaceHealth] = useState<Record<string, 'red' | 'yellow' | 'green' | 'gray'>>({});
+
   // URL sync helper — pushes state to browser history
   function syncUrl(overrides: { ws?: string; tab?: string; file?: string | null; q?: string | null } = {}) {
     const params = new URLSearchParams(window.location.search);
@@ -516,6 +534,34 @@ export default function MissionControl() {
         prsBlocked: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'changes_requested' || p.ci === 'failed').length,
         agentsActive: agents.filter((a: { status: string }) => a.status === 'running' || a.status === 'active').length,
       });
+
+      // Compute per-workspace health from sessions data
+      const allSessions = agentsData.sessions || [];
+      const healthMap: Record<string, 'red' | 'yellow' | 'green' | 'gray'> = {};
+      // Group sessions by agentId (which maps to workspace id)
+      const byAgent: Record<string, Array<{ status: string; lastActivityMs: number }>> = {};
+      for (const s of allSessions) {
+        const aid = (s as { agentId?: string }).agentId;
+        if (!aid) continue;
+        if (!byAgent[aid]) byAgent[aid] = [];
+        byAgent[aid].push(s as { status: string; lastActivityMs: number });
+      }
+      for (const ws of workspaces) {
+        const sessions = byAgent[ws.id] || [];
+        if (sessions.length === 0) {
+          healthMap[ws.id] = 'gray';
+        } else if (sessions.some(s => s.status === 'failed')) {
+          healthMap[ws.id] = 'red';
+        } else if (sessions.some(s => s.status === 'active' || s.status === 'running')) {
+          healthMap[ws.id] = 'green';
+        } else {
+          // All idle — check staleness (>24h = yellow, otherwise gray)
+          const newest = Math.max(...sessions.map(s => s.lastActivityMs || 0));
+          healthMap[ws.id] = newest > 0 && (Date.now() - newest) > 24 * 60 * 60 * 1000 ? 'yellow' : 'gray';
+        }
+      }
+      setWorkspaceHealth(healthMap);
+
       setLastSyncTs(Date.now());
       setLastSyncLabel('just now');
     } catch (e) {
@@ -592,6 +638,7 @@ export default function MissionControl() {
               workspaces={workspaces}
               active={activeWorkspace}
               onSelect={switchWorkspace}
+              health={workspaceHealth}
             />
           </div>
 
