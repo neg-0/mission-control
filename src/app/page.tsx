@@ -33,10 +33,12 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { FileBrowser } from '../components/FileBrowser';
+import GatewayOfflineBanner from '../components/GatewayOfflineBanner';
 import { GoalsTracker } from '../components/GoalsTracker';
 import { PRQueue } from '../components/PRQueue';
 import { SubAgentsPanel } from '../components/SubAgentsPanel';
 import { WorkspaceSearch } from '../components/WorkspaceSearch';
+import { useGatewayHealth } from '../hooks/useGatewayHealth';
 import { useGatewayStream } from '../hooks/useGatewayStream';
 import { Alert, computeAlerts } from '../lib/alerts';
 import { parseGoals } from '../lib/goals';
@@ -377,6 +379,9 @@ export default function MissionControl() {
     },
   });
 
+  // Gateway health monitoring
+  const gatewayHealth = useGatewayHealth();
+
   // Stats
   const [stats, setStats] = useState<{
     prsOpen: number | null;
@@ -511,6 +516,8 @@ export default function MissionControl() {
       <div className="mesh-bg fixed inset-0 -z-10">
         <div className="mesh-bg-accent" />
       </div>
+      {/* Gateway offline banner */}
+      <GatewayOfflineBanner {...gatewayHealth} />
       {/* Header */}
       <header className="sticky top-0 z-50 glass-card rounded-none border-x-0 border-t-0">
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center">
