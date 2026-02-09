@@ -527,7 +527,8 @@ export default function MissionControl() {
         label: session.label,
       }));
 
-      setAlerts(computeAlerts(prs, goals, agents));
+      const currentAlerts = computeAlerts(prs, goals, agents);
+      setAlerts(currentAlerts);
       setStats({
         prsOpen: prs.length,
         prsReadyToMerge: prs.filter((p: { reviewState: string; ci: string }) => p.reviewState === 'approved' && p.ci === 'passing').length,
@@ -535,31 +536,29 @@ export default function MissionControl() {
         agentsActive: agents.filter((a: { status: string }) => a.status === 'running' || a.status === 'active').length,
       });
 
-      // Compute per-workspace health from sessions data
-      const allSessions = agentsData.sessions || [];
+      // Compute per-workspace health from alerts
+      // Fetch goals for each workspace and compute alerts per workspace
+      const severityOrder: Record<string, number> = { red: 0, yellow: 1, gray: 2, green: 3 };
       const healthMap: Record<string, 'red' | 'yellow' | 'green' | 'gray'> = {};
-      // Group sessions by agentId (which maps to workspace id)
-      const byAgent: Record<string, Array<{ status: string; lastActivityMs: number }>> = {};
-      for (const s of allSessions) {
-        const aid = (s as { agentId?: string }).agentId;
-        if (!aid) continue;
-        if (!byAgent[aid]) byAgent[aid] = [];
-        byAgent[aid].push(s as { status: string; lastActivityMs: number });
-      }
-      for (const ws of workspaces) {
-        const sessions = byAgent[ws.id] || [];
-        if (sessions.length === 0) {
+
+      await Promise.all(workspaces.map(async (ws) => {
+        try {
+          const wsGoalsRes = await fetch(`/api/files/read?path=GOALS.md&workspace=${encodeURIComponent(ws.path)}`);
+          const wsGoalsData = wsGoalsRes.ok ? await wsGoalsRes.json() : { content: '' };
+          const wsGoals = parseGoals(wsGoalsData.content || '');
+          const wsAlerts = computeAlerts(prs, wsGoals, agents);
+          // Find most severe alert level
+          let worstLevel: 'red' | 'yellow' | 'green' | 'gray' = 'green';
+          for (const a of wsAlerts) {
+            if (severityOrder[a.level] < severityOrder[worstLevel]) {
+              worstLevel = a.level;
+            }
+          }
+          healthMap[ws.id] = worstLevel;
+        } catch {
           healthMap[ws.id] = 'gray';
-        } else if (sessions.some(s => s.status === 'failed')) {
-          healthMap[ws.id] = 'red';
-        } else if (sessions.some(s => s.status === 'active' || s.status === 'running')) {
-          healthMap[ws.id] = 'green';
-        } else {
-          // All idle — check staleness (>24h = yellow, otherwise gray)
-          const newest = Math.max(...sessions.map(s => s.lastActivityMs || 0));
-          healthMap[ws.id] = newest > 0 && (Date.now() - newest) > 24 * 60 * 60 * 1000 ? 'yellow' : 'gray';
         }
-      }
+      }));
       setWorkspaceHealth(healthMap);
 
       setLastSyncTs(Date.now());
@@ -567,7 +566,7 @@ export default function MissionControl() {
     } catch (e) {
       console.error('Failed to compute alerts:', e);
     }
-  }, [activeWorkspace]);
+  }, [activeWorkspace, workspaces]);
 
   useEffect(() => {
     fetchAlerts();
