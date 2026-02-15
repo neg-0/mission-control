@@ -22,7 +22,7 @@
  */
 
 import { executeTick } from '@/lib/orchestrator-tick';
-import { getTimerStatus } from '@/lib/orchestrator-timer';
+import { getTimerStatus, startTimer } from '@/lib/orchestrator-timer';
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -131,6 +131,13 @@ export async function GET() {
     });
 
     const timer = getTimerStatus();
+
+    // Self-healing: if instrumentation.ts didn't fire, auto-start the timer
+    if (!timer.running && config?.enabled) {
+      console.log('[Orchestrator] Timer not running — auto-starting from status endpoint');
+      startTimer();
+      timer.running = true; // Reflect in this response
+    }
 
     return NextResponse.json({
       enabled: config?.enabled ?? false,
