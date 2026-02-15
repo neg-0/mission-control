@@ -10,6 +10,7 @@ import {
   Loader2,
   Pause,
   Play,
+  Plug,
   Plus,
   Save,
   Timer,
@@ -17,12 +18,10 @@ import {
   Wifi,
   WifiOff,
   X,
-  Zap,
-  Plug
+  Zap
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '../lib/utils';
-import { Button } from './ui/button';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -756,27 +755,35 @@ function RebuildControl() {
 
 function RailwayIntegration() {
   const handleConnect = () => {
-    // Redirect to our Next.js API route that initiates OAuth
     window.location.href = '/api/auth/railway/login';
   };
 
   return (
-    <div className="glass-card p-5">
-      <div className="flex items-center justify-between mb-4">
+    <div className="rounded-lg border border-purple-500/20 bg-gradient-to-br from-purple-950/30 to-zinc-900/50 p-5">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Plug className="w-5 h-5 text-purple-400" />
+          <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M.527 17.236c-.348-.678-.49-1.404-.49-2.164V8.928c0-.76.142-1.486.49-2.164L7.08 12l-6.553 5.236ZM2.56 3.2c.503-.454 1.09-.753 1.737-.882L15.07 12 4.297 21.682c-.647-.13-1.234-.428-1.737-.882L10.927 12 2.56 3.2ZM7.378 1.418C7.99 1.147 8.66 1 9.373 1h5.254c.714 0 1.384.147 1.995.418L9.073 7.657 7.378 1.418ZM17.44 3.2c.503.454.902 1.014 1.184 1.636L12.927 12l5.697 7.164c-.282.622-.681 1.182-1.184 1.636L8.927 12l8.513-8.8ZM23.473 6.764c.348.678.49 1.404.49 2.164v6.144c0 .76-.142 1.486-.49 2.164L16.92 12l6.553-5.236ZM16.622 22.582c-.611.27-1.281.418-1.995.418H9.373c-.714 0-1.384-.147-1.995-.418l7.549-6.239 1.695 6.239Z" fill="#C084FC" />
+            </svg>
+          </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-200">Railway Integration</h3>
-            <p className="text-xs text-zinc-500">Connect to Railway for automated deployments</p>
+            <h3 className="text-sm font-semibold text-zinc-200">Railway</h3>
+            <p className="text-xs text-zinc-500">Automated deployments & infrastructure</p>
           </div>
         </div>
-        <Button onClick={handleConnect} variant="secondary" size="sm" className="bg-purple-600 hover:bg-purple-500 text-white border-none">
+        <button
+          onClick={handleConnect}
+          className="px-4 py-2 text-xs font-medium rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 active:scale-95"
+        >
           Connect Railway
-        </Button>
+        </button>
       </div>
-      <div className="text-xs text-zinc-600 bg-zinc-900/50 p-3 rounded border border-border/30">
-        <p>This integration allows Mission Control to deploy services and manage infrastructure automatically.</p>
-        <p className="mt-1">Status: <span className="text-zinc-500">Unknown (Check logs)</span></p>
+      <div className="mt-4 text-xs text-zinc-500 bg-zinc-900/40 px-3 py-2.5 rounded-md border border-zinc-800/50">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-zinc-600"></div>
+          <span>Not connected</span>
+        </div>
       </div>
     </div>
   );
@@ -1146,7 +1153,7 @@ export function SettingsPage({
 
         {expandedSection.includes('integrations') && (
           <div className="px-5 pb-5 border-t border-border/30 pt-4 space-y-4">
-             <RailwayIntegration />
+            <RailwayIntegration />
           </div>
         )}
       </div>
