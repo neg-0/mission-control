@@ -302,8 +302,8 @@ function JobModal({
                 <button key={kind} type="button"
                   onClick={() => setScheduleKind(kind)}
                   className={`px-3 py-1 text-xs rounded-full border transition-colors ${scheduleKind === kind
-                      ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
-                      : 'border-border/40 text-zinc-500 hover:text-zinc-300'
+                    ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+                    : 'border-border/40 text-zinc-500 hover:text-zinc-300'
                     }`}
                 >
                   {kind === 'cron' ? '⏰ Cron' : kind === 'every' ? '🔄 Interval' : '📅 One-time'}
@@ -509,7 +509,7 @@ function calculatePreview(baseExpr: string, agentIds: string[], gap: number): { 
 // ScheduleManager — main export
 // ---------------------------------------------------------------------------
 
-export function ScheduleManager() {
+export function ScheduleManager({ agentId }: { agentId?: string }) {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingJob, setEditingJob] = useState<CronJob | null>(null);
@@ -519,7 +519,10 @@ export function ScheduleManager() {
 
   const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch('/api/cron-jobs');
+      const url = agentId
+        ? `/api/cron-jobs?agentId=${encodeURIComponent(agentId)}`
+        : '/api/cron-jobs';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setJobs(data.jobs || []);
@@ -529,7 +532,7 @@ export function ScheduleManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [agentId]);
 
   useEffect(() => {
     fetchJobs();
@@ -601,7 +604,7 @@ export function ScheduleManager() {
 
   // Group and filter
   const filteredJobs = filter ? jobs.filter(j => j.agentId === filter) : jobs;
-  const agents = [...new Set(jobs.map(j => j.agentId))].sort();
+  const agents = agentId ? [] : [...new Set(jobs.map(j => j.agentId))].sort();
   const enabledCount = jobs.filter(j => j.enabled).length;
 
   if (loading) {
@@ -680,7 +683,7 @@ export function ScheduleManager() {
 
       {/* Modals */}
       {showCreate && (
-        <JobModal job={null} onSave={handleSave} onClose={() => setShowCreate(false)} />
+        <JobModal job={agentId ? { agentId } as CronJob : null} onSave={handleSave} onClose={() => setShowCreate(false)} />
       )}
       {editingJob && (
         <JobModal job={editingJob} onSave={handleSave} onClose={() => setEditingJob(null)} />

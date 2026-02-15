@@ -117,9 +117,10 @@ function ActionIcon({ iconKey, className }: { iconKey: string; className?: strin
 
 interface SubAgentsPanelProps {
   className?: string;
+  agentId?: string;
 }
 
-export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
+export function SubAgentsPanel({ className, agentId }: SubAgentsPanelProps) {
   const [agents, setAgents] = useState<Map<string, SubAgent>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showIdle, setShowIdle] = useState(false);
@@ -176,6 +177,10 @@ export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
     const evt = event.data;
     const runId = evt.runId as string;
     const sessionKey = (evt.sessionKey as string) || runId;
+
+    // If filtering by agentId, skip events that don't match this agent
+    if (agentId && !sessionKey.startsWith(`agent:${agentId}:`)) return;
+
     const stream = evt.stream as string;
     const data = (evt.data || {}) as Record<string, unknown>;
     const phase = data.phase as string | undefined;
@@ -296,6 +301,9 @@ export function SubAgentsPanel({ className }: SubAgentsPanelProps) {
         setAgents(prev => {
           const next = new Map(prev);
           for (const session of data.sessions || []) {
+            // Skip sessions that don't belong to this agent
+            if (agentId && session.agentId !== agentId) continue;
+
             if (!next.has(session.sessionKey)) {
               next.set(session.sessionKey, {
                 sessionKey: session.sessionKey,

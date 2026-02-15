@@ -65,10 +65,11 @@ interface DashboardData {
 
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
-  if (diff < 5000) return 'just now';
-  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 60000) return 'just now';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return `${Math.floor(diff / 604800000)}w ago`;
 }
 
 // --- Small Components ---
@@ -348,18 +349,27 @@ function MissionControlInner() {
   const [myTasks, setMyTasks] = useState<MyTask[]>([]);
 
   // URL sync helper
-  function syncUrl(overrides: { ws?: string; tab?: string; file?: string | null; q?: string | null } = {}) {
+  function syncUrl(overrides: { tab?: string; agent?: string | null; detail?: string | null; file?: string | null; q?: string | null } = {}) {
     const params = new URLSearchParams(window.location.search);
+    const tab = overrides.tab ?? activeTab;
     const updates: Record<string, string | null> = {
-      ws: overrides.ws ?? activeWorkspace?.id ?? null,
-      tab: overrides.tab ?? activeTab,
+      tab,
+      agent: ('agent' in overrides ? overrides.agent : (tab === 'agents' ? selectedAgentId : null)) ?? null,
+      detail: ('detail' in overrides ? overrides.detail : (tab === 'agents' && selectedAgentId ? agentDetailTab : null)) ?? null,
       file: ('file' in overrides ? overrides.file : searchSelectedFile) ?? null,
       q: ('q' in overrides ? overrides.q : highlightQuery) ?? null,
     };
+    // Clear agent/detail when not on agents tab
+    if (tab !== 'agents') {
+      updates.agent = null;
+      updates.detail = null;
+    }
     for (const [key, value] of Object.entries(updates)) {
       if (value) params.set(key, value);
       else params.delete(key);
     }
+    // Remove legacy ws param
+    params.delete('ws');
     const qs = params.toString();
     const newUrl = qs ? `?${qs}` : window.location.pathname;
     if (newUrl !== `${window.location.pathname}${window.location.search}`) {
@@ -371,24 +381,30 @@ function MissionControlInner() {
   useEffect(() => {
     function handlePopState() {
       const params = new URLSearchParams(window.location.search);
-      const urlWs = params.get('ws');
-      const urlTab = params.get('tab') as 'warroom' | 'projects' | 'agents' | 'tasks' | 'infra' | null;
+      const urlTab = params.get('tab') as 'warroom' | 'ideas' | 'projects' | 'agents' | 'tasks' | 'infra' | 'settings' | null;
+      const urlAgent = params.get('agent');
+      const urlDetail = params.get('detail') as 'overview' | 'goals' | 'schedule' | 'files' | null;
       const urlFile = params.get('file');
       const urlQ = params.get('q');
 
       if (urlTab) setActiveTab(urlTab);
+      if (urlAgent !== selectedAgentId) setSelectedAgentId(urlAgent);
+      if (urlDetail) setAgentDetailTab(urlDetail);
+      else if (!urlAgent) setAgentDetailTab('overview');
       if (urlFile !== searchSelectedFile) setSearchSelectedFile(urlFile);
       if (urlQ !== highlightQuery) setHighlightQuery(urlQ);
-      if (urlWs) {
-        const match = workspaces.find(w => w.id === urlWs);
-        if (match && match.id !== activeWorkspace?.id) setActiveWorkspace(match);
+
+      // Derive workspace from agent
+      if (urlAgent) {
+        const ws = workspaces.find(w => w.id === urlAgent);
+        if (ws && ws.id !== activeWorkspace?.id) setActiveWorkspace(ws);
       }
     }
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [workspaces, activeWorkspace, searchSelectedFile, highlightQuery]);
+  }, [workspaces, activeWorkspace, selectedAgentId, searchSelectedFile, highlightQuery]);
 
-  // Load workspaces on mount
+  // Load workspaces on mount + restore URL state
   useEffect(() => {
     async function loadWorkspaces() {
       try {
@@ -396,10 +412,16 @@ function MissionControlInner() {
         if (res.ok) {
           const data: Workspace[] = await res.json();
           setWorkspaces(data);
-          const urlWs = searchParams.get('ws');
-          const match = urlWs ? data.find(w => w.id === urlWs) : null;
-          if (match) {
-            setActiveWorkspace(match);
+
+          // Restore agent/detail from URL (supports deep links & refresh)
+          const urlAgent = searchParams.get('agent') || searchParams.get('ws'); // backward compat
+          const urlDetail = searchParams.get('detail') as 'overview' | 'goals' | 'schedule' | 'files' | null;
+
+          if (urlAgent) {
+            setSelectedAgentId(urlAgent);
+            if (urlDetail) setAgentDetailTab(urlDetail);
+            const ws = data.find(w => w.id === urlAgent);
+            if (ws) setActiveWorkspace(ws);
           } else if (data.length > 0 && !activeWorkspace) {
             setActiveWorkspace(data[0]);
           }
@@ -565,21 +587,24 @@ function MissionControlInner() {
     setActiveWorkspace(ws);
     setSearchSelectedFile(null);
     setHighlightQuery(null);
-    syncUrl({ ws: ws.id, file: null, q: null });
+    syncUrl({ file: null, q: null });
   }
 
   // Handle search result selecting a file
   function handleSearchSelect(filePath: string, workspacePath: string, query: string) {
     const targetWs = workspaces.find(w => w.path === workspacePath);
-    if (targetWs && targetWs.id !== activeWorkspace?.id) {
-      setActiveWorkspace(targetWs);
+    if (targetWs) {
+      if (targetWs.id !== activeWorkspace?.id) setActiveWorkspace(targetWs);
+      setSelectedAgentId(targetWs.id);
     }
     setSearchSelectedFile(filePath);
     setHighlightQuery(query || null);
     setActiveTab('agents');
+    setAgentDetailTab('files');
     syncUrl({
-      ws: targetWs?.id,
       tab: 'agents',
+      agent: targetWs?.id || null,
+      detail: 'files',
       file: filePath,
       q: query || null,
     });
@@ -590,13 +615,9 @@ function MissionControlInner() {
     setSelectedAgentId(agentId);
     setAgentDetailTab('overview');
     setActiveTab('agents');
-    syncUrl({ tab: 'agents' });
-    // Also try to activate the matching workspace
     const ws = workspaces.find(w => w.id === agentId);
-    if (ws) {
-      setActiveWorkspace(ws);
-      syncUrl({ ws: ws.id, tab: 'agents' });
-    }
+    if (ws) setActiveWorkspace(ws);
+    syncUrl({ tab: 'agents', agent: agentId, detail: 'overview' });
   }
 
   return (
@@ -608,15 +629,6 @@ function MissionControlInner() {
       <header className="sticky top-0 z-50 glass-card rounded-none border-x-0 border-t-0">
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center">
           <div className="flex-1 flex items-center">
-            {activeWorkspace && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <div className={cn(
-                  'w-2 h-2 rounded-full',
-                  workspaceHealth[activeWorkspace.id] === 'green' ? 'bg-emerald-400' : workspaceHealth[activeWorkspace.id] === 'yellow' ? 'bg-yellow-400' : workspaceHealth[activeWorkspace.id] === 'red' ? 'bg-red-500' : 'bg-zinc-500'
-                )} />
-                <span className="font-medium text-foreground">{activeWorkspace.label || activeWorkspace.id}</span>
-              </div>
-            )}
           </div>
 
           <h1 className="select-none flex items-center gap-0">
@@ -714,7 +726,7 @@ function MissionControlInner() {
             <h2 className="text-lg font-semibold mb-2">No workspaces configured</h2>
             <p className="text-sm text-muted-foreground mb-4">Add an agent workspace in Settings to get started.</p>
             <button
-              onClick={() => { setActiveTab('settings'); syncUrl({ tab: 'settings' }); }}
+              onClick={() => { setActiveTab('settings'); syncUrl({ tab: 'settings', agent: null, detail: null }); }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
             >
               <Settings className="w-4 h-4" /> Open Settings
@@ -752,7 +764,7 @@ function MissionControlInner() {
                 return (
                   <button
                     key={tab}
-                    onClick={() => { setActiveTab(tab); syncUrl({ tab }); }}
+                    onClick={() => { setActiveTab(tab); syncUrl({ tab, agent: tab === 'agents' ? selectedAgentId : null, detail: tab === 'agents' && selectedAgentId ? agentDetailTab : null }); }}
                     className={cn(
                       'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
                       activeTab === tab
@@ -911,6 +923,7 @@ function MissionControlInner() {
                 )
                 : fleet;
               const selectedAgent = fleet.find(a => a.id === selectedAgentId) || null;
+              const selectedAgentWorkspace = workspaces.find(w => w.id === selectedAgentId) || null;
 
               return (
                 <>
@@ -942,6 +955,9 @@ function MissionControlInner() {
                               onClick={() => {
                                 setSelectedAgentId(agent.id);
                                 setAgentDetailTab('overview');
+                                const ws = workspaces.find(w => w.id === agent.id);
+                                if (ws) setActiveWorkspace(ws);
+                                syncUrl({ agent: agent.id, detail: 'overview' });
                               }}
                               className={cn(
                                 'w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-border/30',
@@ -982,30 +998,36 @@ function MissionControlInner() {
                                 <span className="text-3xl">{selectedAgent.emoji}</span>
                                 <div>
                                   <h2 className="text-lg font-bold">{selectedAgent.name || selectedAgent.id}</h2>
-                                  <div className="text-sm text-muted-foreground">{selectedAgent.status || '—'}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {selectedAgent.last_updated ? `Last seen ${formatRelativeTime(new Date(selectedAgent.last_updated).getTime())}` : 'No activity reported'}
+                                  </div>
                                 </div>
                                 <div className={cn(
-                                  'px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider',
+                                  'px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider flex items-center gap-1.5',
                                   selectedAgent.health === 'green' && 'bg-emerald-500/20 text-emerald-400',
                                   selectedAgent.health === 'yellow' && 'bg-yellow-500/20 text-yellow-400',
                                   selectedAgent.health === 'red' && 'bg-red-500/20 text-red-400',
                                   selectedAgent.health === 'gray' && 'bg-zinc-500/20 text-zinc-400',
                                 )}>
+                                  <div className={cn(
+                                    'w-1.5 h-1.5 rounded-full',
+                                    selectedAgent.health === 'green' && 'bg-emerald-400',
+                                    selectedAgent.health === 'yellow' && 'bg-yellow-400',
+                                    selectedAgent.health === 'red' && 'bg-red-400',
+                                    selectedAgent.health === 'gray' && 'bg-zinc-400',
+                                  )} />
                                   {selectedAgent.health === 'green' ? 'Healthy' : selectedAgent.health === 'yellow' ? 'Stale' : selectedAgent.health === 'red' ? 'Offline' : 'No Signal'}
                                 </div>
                               </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                {selectedAgent.last_updated ? `Last seen: ${selectedAgent.last_updated}` : 'Never reported'}
-                              </div>
                             </div>
                             {/* Doc quick-access */}
-                            {activeWorkspace && (
+                            {selectedAgentWorkspace && (
                               <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border/30">
                                 {['SOUL.md', 'IDENTITY.md', 'HEARTBEAT.md', 'AGENTS.md', 'TOOLS.md', 'USER.md'].map(doc => (
                                   <DocPreviewButton
                                     key={doc}
                                     label={doc}
-                                    workspace={activeWorkspace.path}
+                                    workspace={selectedAgentWorkspace.path}
                                     filename={doc}
                                   />
                                 ))}
@@ -1018,7 +1040,7 @@ function MissionControlInner() {
                             {(['overview', 'goals', 'schedule', 'files'] as const).map(tab => (
                               <button
                                 key={tab}
-                                onClick={() => setAgentDetailTab(tab)}
+                                onClick={() => { setAgentDetailTab(tab); syncUrl({ detail: tab }); }}
                                 className={cn(
                                   'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors capitalize',
                                   agentDetailTab === tab
@@ -1041,11 +1063,7 @@ function MissionControlInner() {
                               <div className="space-y-4">
                                 {/* Status + Mission from FleetCards data */}
                                 <div className="glass-card p-4">
-                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div className="text-center p-2 bg-card/40 rounded-lg">
-                                      <div className="text-lg font-bold font-mono">{selectedAgent.status || '—'}</div>
-                                      <div className="text-[10px] text-muted-foreground uppercase">Status</div>
-                                    </div>
+                                  <div className="grid grid-cols-3 gap-3">
                                     <div className="text-center p-2 bg-card/40 rounded-lg">
                                       <div className="text-lg font-bold font-mono">${selectedAgent.mrr ?? 0}</div>
                                       <div className="text-[10px] text-muted-foreground uppercase">MRR</div>
@@ -1055,8 +1073,8 @@ function MissionControlInner() {
                                       <div className="text-[10px] text-muted-foreground uppercase">Users</div>
                                     </div>
                                     <div className="text-center p-2 bg-card/40 rounded-lg">
-                                      <div className="text-lg font-bold font-mono">{selectedAgent.health === 'green' ? '✓' : selectedAgent.health === 'yellow' ? '⚠' : '✗'}</div>
-                                      <div className="text-[10px] text-muted-foreground uppercase">Health</div>
+                                      <div className="text-lg font-bold font-mono">{selectedAgent.traffic ?? 0}</div>
+                                      <div className="text-[10px] text-muted-foreground uppercase">Traffic</div>
                                     </div>
                                   </div>
                                 </div>
@@ -1067,8 +1085,8 @@ function MissionControlInner() {
                                     <p className="text-sm font-mono text-foreground/80">{selectedAgent.last_report}</p>
                                   </div>
                                 )}
-                                {/* Sub-agents if this is the master */}
-                                <SubAgentsPanel />
+                                {/* Sub-agents / processes for this agent */}
+                                <SubAgentsPanel agentId={selectedAgentId || undefined} />
                               </div>
                             )}
 
@@ -1080,7 +1098,7 @@ function MissionControlInner() {
 
                             {agentDetailTab === 'schedule' && (
                               <div className="glass-card overflow-hidden p-4">
-                                <ScheduleManager />
+                                <ScheduleManager agentId={selectedAgentId || undefined} />
                               </div>
                             )}
 
@@ -1088,7 +1106,7 @@ function MissionControlInner() {
                               <FileBrowser
                                 className="h-[500px]"
                                 initialFile={searchSelectedFile}
-                                workspace={activeWorkspace?.path || '/home/neg0/.openclaw'}
+                                workspace={selectedAgentWorkspace?.path || '/home/neg0/.openclaw'}
                                 highlightQuery={highlightQuery}
                               />
                             )}
