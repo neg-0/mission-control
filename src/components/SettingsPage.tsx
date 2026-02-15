@@ -17,10 +17,12 @@ import {
   Wifi,
   WifiOff,
   X,
-  Zap
+  Zap,
+  Plug
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '../lib/utils';
+import { Button } from './ui/button';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -620,6 +622,167 @@ function CronJobsReadOnly({ jobs }: { jobs: CronJobInfo[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Section: Rebuild Control
+// ---------------------------------------------------------------------------
+
+function RebuildControl() {
+  const [status, setStatus] = useState<'idle' | 'confirming' | 'building' | 'complete' | 'failed'>('idle');
+  const [logLines, setLogLines] = useState<string[]>([]);
+
+  const startRebuild = async () => {
+    setStatus('building');
+    setLogLines(['Starting rebuild…']);
+    try {
+      const res = await fetch('/api/control-rebuild', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rebuild' }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setStatus('failed');
+        setLogLines(prev => [...prev, `Error: ${data.message}`]);
+        return;
+      }
+      // Poll for status
+      const poll = setInterval(async () => {
+        try {
+          const sRes = await fetch('/api/control-rebuild', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'status' }),
+          });
+          const sData = await sRes.json();
+          if (sData.lines?.length) setLogLines(sData.lines);
+          if (sData.status === 'complete') {
+            clearInterval(poll);
+            setStatus('complete');
+          } else if (sData.status === 'failed') {
+            clearInterval(poll);
+            setStatus('failed');
+          }
+        } catch {
+          // Server likely down during rebuild, keep polling
+        }
+      }, 3000);
+      // Safety timeout — stop polling after 5 min
+      setTimeout(() => clearInterval(poll), 300_000);
+    } catch {
+      setStatus('failed');
+      setLogLines(prev => [...prev, 'Failed to reach API']);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs text-zinc-300 font-medium">Production Rebuild</div>
+          <div className="text-[10px] text-zinc-600 mt-0.5">
+            Stops the service, runs <code className="bg-zinc-800 px-1 rounded">npm run build</code>, then restarts.
+          </div>
+        </div>
+        {status === 'idle' && (
+          <button
+            onClick={() => setStatus('confirming')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-amber-600/80 text-white font-medium hover:bg-amber-500 transition-colors"
+          >
+            <Zap className="w-3 h-3" /> Rebuild
+          </button>
+        )}
+        {status === 'confirming' && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-amber-400">This will take the UI offline briefly.</span>
+            <button
+              onClick={startRebuild}
+              className="px-3 py-1.5 text-xs rounded bg-red-600 text-white font-medium hover:bg-red-500 transition-colors"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setStatus('idle')}
+              className="px-3 py-1.5 text-xs rounded border border-border text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {status === 'building' && (
+          <span className="flex items-center gap-1.5 text-xs text-amber-400">
+            <Loader2 className="w-3 h-3 animate-spin" /> Building…
+          </span>
+        )}
+        {status === 'complete' && (
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <Check className="w-3 h-3" /> Done — page will reload
+          </span>
+        )}
+        {status === 'failed' && (
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs text-red-400">
+              <AlertTriangle className="w-3 h-3" /> Failed
+            </span>
+            <button
+              onClick={() => { setStatus('idle'); setLogLines([]); }}
+              className="px-2 py-1 text-[10px] rounded border border-border text-zinc-500 hover:text-zinc-300"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Build log */}
+      {logLines.length > 0 && (status === 'building' || status === 'complete' || status === 'failed') && (
+        <div className="bg-zinc-950 border border-border/30 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-[10px] text-zinc-500 space-y-0.5">
+          {logLines.map((line, i) => (
+            <div key={i} className={cn(
+              line.includes('Error') || line.includes('ERR!') ? 'text-red-400' :
+                line.includes('===') ? 'text-amber-400 font-semibold' :
+                  line.startsWith('[') ? 'text-cyan-400' : ''
+            )}>
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section: Railway Integration
+// ---------------------------------------------------------------------------
+
+function RailwayIntegration() {
+  const handleConnect = () => {
+    // Redirect to our Next.js API route that initiates OAuth
+    window.location.href = '/api/auth/railway/login';
+  };
+
+  return (
+    <div className="glass-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <Plug className="w-5 h-5 text-purple-400" />
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-200">Railway Integration</h3>
+            <p className="text-xs text-zinc-500">Connect to Railway for automated deployments</p>
+          </div>
+        </div>
+        <Button onClick={handleConnect} variant="secondary" size="sm" className="bg-purple-600 hover:bg-purple-500 text-white border-none">
+          Connect Railway
+        </Button>
+      </div>
+      <div className="text-xs text-zinc-600 bg-zinc-900/50 p-3 rounded border border-border/30">
+        <p>This integration allows Mission Control to deploy services and manage infrastructure automatically.</p>
+        <p className="mt-1">Status: <span className="text-zinc-500">Unknown (Check logs)</span></p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main SettingsPage
 // ---------------------------------------------------------------------------
 
@@ -635,7 +798,7 @@ export function SettingsPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [expandedSection, setExpandedSection] = useState<string[]>(['orchestrator', 'schedules']);
+  const [expandedSection, setExpandedSection] = useState<string[]>(['orchestrator', 'schedules', 'integrations']);
 
   const fetchData = useCallback(async () => {
     try {
@@ -966,6 +1129,28 @@ export function SettingsPage({
         )}
       </div>
 
+      {/* ============ INTEGRATIONS ============ */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => toggleSection('integrations')}
+          className="w-full flex items-center gap-3 px-5 py-3 text-left"
+        >
+          <Plug className="w-4 h-4 text-purple-400" />
+          <span className="text-sm font-semibold text-zinc-200 flex-1">Integrations</span>
+          <ChevronDown
+            className={cn('w-4 h-4 text-zinc-500 transition-transform',
+              expandedSection.includes('integrations') && 'rotate-180'
+            )}
+          />
+        </button>
+
+        {expandedSection.includes('integrations') && (
+          <div className="px-5 pb-5 border-t border-border/30 pt-4 space-y-4">
+             <RailwayIntegration />
+          </div>
+        )}
+      </div>
+
       {/* ============ RECENT ACTIVITY ============ */}
       <div className="glass-card overflow-hidden">
         <button
@@ -1059,6 +1244,28 @@ export function SettingsPage({
               </span>
             </div>
             <CronJobsReadOnly jobs={cronJobs} />
+          </div>
+        )}
+      </div>
+
+      {/* ============ SYSTEM ============ */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => toggleSection('system')}
+          className="w-full flex items-center gap-3 px-5 py-3 text-left"
+        >
+          <Zap className="w-4 h-4 text-amber-400" />
+          <span className="text-sm font-semibold text-zinc-200 flex-1">System</span>
+          <ChevronDown
+            className={cn('w-4 h-4 text-zinc-500 transition-transform',
+              expandedSection.includes('system') && 'rotate-180'
+            )}
+          />
+        </button>
+
+        {expandedSection.includes('system') && (
+          <div className="px-5 pb-5 border-t border-border/30 pt-4 space-y-3">
+            <RebuildControl />
           </div>
         )}
       </div>

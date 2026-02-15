@@ -40,6 +40,15 @@ const healthLabel: Record<string, string> = {
   gray: 'No Signal',
 };
 
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
+  return `${Math.floor(diff / 604800000)}w ago`;
+}
+
 export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
   const [goals, setGoals] = useState<GoalSummary[]>([]);
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
@@ -154,7 +163,7 @@ export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
 
                 {agent.last_updated && (
                   <div className="text-[9px] text-muted-foreground/60">
-                    Last seen: {agent.last_updated}
+                    Last seen {formatRelativeTime(new Date(agent.last_updated).getTime())}
                   </div>
                 )}
                 <div className="text-[9px] text-center text-muted-foreground/40">Click to view details</div>

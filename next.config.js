@@ -9,5 +9,7 @@ const nextConfig = {
     OPENCLAW_GATEWAY_URL: process.env.OPENCLAW_GATEWAY_URL,
     OPENCLAW_HOOKS_TOKEN: process.env.OPENCLAW_HOOKS_TOKEN,
   },
+  // Ensure we are NOT using static export if we rely on dynamic routes/api
+  // output: 'export', // Commented out to ensure dynamic server mode
 }
 module.exports = nextConfig

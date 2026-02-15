@@ -668,10 +668,10 @@ function MissionControlInner() {
             <div className="hidden md:flex items-center gap-2">
               <div className={cn(
                 'w-2 h-2 led',
-                connected ? 'led-green' : connecting ? 'led-yellow led-pulse' : 'led-gray'
+                gatewayHealth.online ? 'led-green' : gatewayHealth.loading ? 'led-yellow led-pulse' : 'led-gray'
               )} />
               <span className="text-sm text-muted-foreground">
-                {connected ? 'Live' : connecting ? 'Connecting...' : 'Offline'}
+                {gatewayHealth.online ? 'Live' : gatewayHealth.loading ? 'Checking...' : 'Offline'}
               </span>
             </div>
 
@@ -1172,11 +1172,10 @@ function MissionControlInner() {
         <div className="max-w-[1600px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-4">
             <span className={cn(
-              connected ? 'text-green-400' : 'text-gray-400'
+              gatewayHealth.online ? 'text-green-400' : 'text-gray-400'
             )}>
-              {connected ? '🟢' : '⚪'} Gateway: {connected ? 'Connected' : 'Disconnected'}
+              {gatewayHealth.online ? '🟢' : '⚪'} Gateway: {gatewayHealth.online ? 'Connected' : 'Disconnected'}
             </span>
-            <span>📁 {activeWorkspace?.path || 'No workspace selected'}</span>
             {dashboardData?.cron && (
               <CronHealth
                 total={dashboardData.cron.total}
