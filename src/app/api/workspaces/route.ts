@@ -1,48 +1,56 @@
-import { readFile, writeFile } from 'fs/promises';
-import { NextRequest, NextResponse } from 'next/server';
-import path from 'path';
+import { readFile } from 'fs/promises';
+import { NextResponse } from 'next/server';
 
 export interface Workspace {
   id: string;
   label: string;
   path: string;
+  model?: string;
+  emoji?: string;
 }
 
-const CONFIG_PATH = path.join(process.cwd(), 'workspaces.json');
+const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
+
+// Cache with TTL to avoid reading the file on every request
+let cache: { workspaces: Workspace[]; ts: number } | null = null;
+const CACHE_TTL = 30_000; // 30 seconds
 
 async function loadWorkspaces(): Promise<Workspace[]> {
+  if (cache && Date.now() - cache.ts < CACHE_TTL) {
+    return cache.workspaces;
+  }
   try {
-    const content = await readFile(CONFIG_PATH, 'utf-8');
-    return JSON.parse(content) as Workspace[];
-  } catch {
-    return [];
+    const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+    const cfg = JSON.parse(raw);
+    const agentList: Array<{
+      id: string;
+      name: string;
+      workspace?: string;
+      model?: string;
+      identity?: { name?: string; emoji?: string };
+    }> = cfg?.agents?.list || [];
+
+    const workspaces: Workspace[] = agentList
+      .filter(a => a.workspace) // skip any agent without a workspace
+      .map(a => ({
+        id: a.id,
+        label: a.identity?.name
+          ? `${a.identity.emoji || ''} ${a.identity.name}`.trim()
+          : a.name,
+        path: a.workspace!,
+        model: a.model,
+        emoji: a.identity?.emoji,
+      }));
+
+    cache = { workspaces, ts: Date.now() };
+    return workspaces;
+  } catch (e) {
+    console.error('Failed to load agents from openclaw.json:', e);
+    return cache?.workspaces || [];
   }
 }
 
 export async function GET() {
   const workspaces = await loadWorkspaces();
   return NextResponse.json(workspaces);
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const workspaces: Workspace[] = await request.json();
-
-    // Validate
-    if (!Array.isArray(workspaces)) {
-      return NextResponse.json({ error: 'Expected an array of workspaces' }, { status: 400 });
-    }
-
-    for (const ws of workspaces) {
-      if (!ws.id || !ws.label || !ws.path) {
-        return NextResponse.json({ error: 'Each workspace needs id, label, and path' }, { status: 400 });
-      }
-    }
-
-    await writeFile(CONFIG_PATH, JSON.stringify(workspaces, null, 2) + '\n', 'utf-8');
-    return NextResponse.json(workspaces);
-  } catch (error) {
-    console.error('Failed to save workspaces:', error);
-    return NextResponse.json({ error: 'Failed to save' }, { status: 500 });
-  }
 }

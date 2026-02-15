@@ -45,7 +45,6 @@ export async function getFileTree(rootPath: string, maxDepth = 3): Promise<FileN
 
 // Quick access files with their purposes
 export const QUICK_ACCESS_FILES = [
-  { name: 'Goals', path: 'GOALS.md', icon: '🎯', description: 'Active objectives' },
   { name: 'Playbook', path: 'PLAYBOOK.md', icon: '📖', description: 'Operating procedures' },
   { name: 'Memory', path: 'MEMORY.md', icon: '🧠', description: 'Long-term learnings' },
   { name: 'Heartbeat', path: 'HEARTBEAT.md', icon: '💓', description: 'Cron tasks' },

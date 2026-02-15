@@ -2,8 +2,6 @@ import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
 import path from 'path';
 
-// Agent config paths — derived from gateway health data
-const AGENTS_ROOT = '/home/neg0/.openclaw/agents';
 const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
 
 interface AgentConfig {
@@ -11,20 +9,6 @@ interface AgentConfig {
   name: string;
   sessionsPath: string;
 }
-
-// Known agents (from openclaw.json config)
-const AGENTS: AgentConfig[] = [
-  {
-    agentId: 'rocket',
-    name: 'Rocket (Master CEO)',
-    sessionsPath: path.join(AGENTS_ROOT, 'rocket/sessions/sessions.json'),
-  },
-  {
-    agentId: 'captain',
-    name: 'Captain (ShipLog CEO)',
-    sessionsPath: path.join(AGENTS_ROOT, 'captain/sessions/sessions.json'),
-  },
-];
 
 interface SessionEntry {
   sessionId?: string;
@@ -38,29 +22,57 @@ interface SessionEntry {
   };
 }
 
-// Read model config from openclaw.json (cached)
-let modelCache: { primary: string; subagent: string; ts: number } | null = null;
-const MODEL_CACHE_TTL = 60_000; // 1 minute
+// Cached config (agents + models) with TTL
+let configCache: {
+  agents: AgentConfig[];
+  primary: string;
+  subagent: string;
+  ts: number;
+} | null = null;
+const CACHE_TTL = 60_000; // 1 minute
 
-async function getModels(): Promise<{ primary: string; subagent: string }> {
-  if (modelCache && Date.now() - modelCache.ts < MODEL_CACHE_TTL) {
-    return modelCache;
+async function loadConfig(): Promise<{
+  agents: AgentConfig[];
+  primary: string;
+  subagent: string;
+}> {
+  if (configCache && Date.now() - configCache.ts < CACHE_TTL) {
+    return configCache;
   }
   try {
     const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
     const cfg = JSON.parse(raw);
+
+    // Parse agents
+    const agentList: Array<{
+      id: string;
+      name: string;
+      agentDir?: string;
+    }> = cfg?.agents?.list || [];
+
+    const agents: AgentConfig[] = agentList
+      .filter(a => a.agentDir)
+      .map(a => ({
+        agentId: a.id,
+        name: a.name,
+        sessionsPath: path.join(a.agentDir!, 'sessions', 'sessions.json'),
+      }));
+
+    // Parse models
     const defaults = cfg?.agents?.defaults || {};
     const primary = defaults?.model?.primary || 'unknown';
     const subagent = defaults?.subagents?.model?.primary || primary;
-    modelCache = { primary, subagent, ts: Date.now() };
-    return modelCache;
-  } catch {
-    return { primary: 'unknown', subagent: 'unknown' };
+
+    configCache = { agents, primary, subagent, ts: Date.now() };
+    return configCache;
+  } catch (e) {
+    console.error('Failed to load openclaw.json:', e);
+    return configCache || { agents: [], primary: 'unknown', subagent: 'unknown' };
   }
 }
 
 export async function GET() {
-  const models = await getModels();
+  const { agents: AGENTS, primary, subagent } = await loadConfig();
 
   const sessions: Array<{
     sessionKey: string;
@@ -98,7 +110,7 @@ export async function GET() {
         if (kind === 'main') label = 'Main Session';
 
         // Resolve model: main sessions get the primary, everything else gets subagent
-        const model = kind === 'main' ? models.primary : models.subagent;
+        const model = kind === 'main' ? primary : subagent;
 
         const ageMs = entry.updatedAt ? Date.now() - entry.updatedAt : Infinity;
         const isActive = ageMs < 5 * 60 * 1000; // Active if updated within 5 minutes
@@ -115,7 +127,10 @@ export async function GET() {
         });
       }
     } catch (e) {
-      console.error(`Failed to read sessions for ${agent.agentId}:`, e);
+      // Silently skip agents whose sessions file doesn't exist yet
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error(`Failed to read sessions for ${agent.agentId}:`, e);
+      }
     }
   }
 

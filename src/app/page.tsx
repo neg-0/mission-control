@@ -1,56 +1,67 @@
 'use client';
 
 import {
-  closestCenter,
-  DndContext,
-  DragEndEvent,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  GitPullRequest,
-  GripVertical,
+  Flame,
+  ListTodo,
   Menu,
-  Plus,
+  Search,
   Settings,
-  Trash2,
   X,
-  XCircle,
   Zap
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { AgentGrid } from '../components/AgentGrid';
+import { BlockerBanner } from '../components/BlockerBanner';
+import { CostBreakdown } from '../components/CostBreakdown';
+import { CronHealth } from '../components/CronHealth';
+import { DocPreviewButton } from '../components/DocPreviewButton';
 import { FileBrowser } from '../components/FileBrowser';
 import GatewayOfflineBanner from '../components/GatewayOfflineBanner';
-import { GoalsTracker } from '../components/GoalsTracker';
-import { PRQueue } from '../components/PRQueue';
+import { GoalsPanel } from '../components/GoalsPanel';
+import { ScheduleManager } from '../components/ScheduleManager';
+import { SettingsPage } from '../components/SettingsPage';
+
+import { IdeaDetail } from '../components/IdeaDetail';
+import { IdeaDetailModal } from '../components/IdeaDetailModal';
+import { IdeasKanban } from '../components/IdeasKanban';
+import InfraMonitor from '../components/InfraMonitor';
+import { MrrMeter } from '../components/MrrMeter';
+import { ProjectDetail } from '../components/ProjectDetail';
+import { ProjectsGrid } from '../components/ProjectsGrid';
 import { SubAgentsPanel } from '../components/SubAgentsPanel';
+import TaskBoard from '../components/TaskBoard';
 import { WorkspaceSearch } from '../components/WorkspaceSearch';
 import { useGatewayHealth } from '../hooks/useGatewayHealth';
 import { useGatewayStream } from '../hooks/useGatewayStream';
 import { Alert, computeAlerts } from '../lib/alerts';
-import { parseGoals } from '../lib/goals';
+
 import { cn } from '../lib/utils';
 
-// Types
+// Types (Keep existing types)
 interface Workspace {
   id: string;
   label: string;
   path: string;
+  model?: string;
+  emoji?: string;
 }
+
+interface DashboardData {
+  updated_at: string;
+  global: { mrr_total: number; burn_rate_est: number; active_agents: number; active_projects: number; total_users: number; total_fleet: number };
+  pipeline: Array<{ id: string; name: string; bluf: string; score: number; status: string; nextStep?: string; url: string | null }>;
+  fleet: Array<{ id: string; name: string; emoji: string; health: 'green' | 'yellow' | 'red' | 'gray'; status: string; last_report: string; mrr: number; users: number; traffic: number; cost: number; checklist_progress: number; last_updated: string | null; has_stats: boolean }>;
+  goals: Array<{ id: string; name: string; status: string; owner: string }>;
+  milestones: Array<{ label: string; mrr: number; status: string }>;
+  blockers: Array<{ agentId: string; agentName: string; emoji: string; blocker: string }>;
+  cron: { total: number; ok: number; errors: Array<{ name: string; lastStatus: string }> };
+}
+
+// ... (Keep Helper Functions & Components: formatRelativeTime, AlertLevel, AlertRow, StatCard, WorkspaceSelector, SettingsModal) ...
 
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -127,6 +138,9 @@ function WorkspaceSelector({ workspaces, active, onSelect, health }: {
   health?: Record<string, 'red' | 'yellow' | 'green' | 'gray'>;
 }) {
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const filterRef = useRef<HTMLInputElement>(null);
+  const showSearch = workspaces.length > 20;
 
   const ledColor: Record<string, string> = {
     red: 'led-red',
@@ -135,10 +149,24 @@ function WorkspaceSelector({ workspaces, active, onSelect, health }: {
     gray: 'led-gray',
   };
 
+  const filtered = filter.trim()
+    ? workspaces.filter(ws =>
+      ws.label.toLowerCase().includes(filter.toLowerCase()) ||
+      ws.id.toLowerCase().includes(filter.toLowerCase())
+    )
+    : workspaces;
+
+  useEffect(() => {
+    if (open && showSearch) {
+      setTimeout(() => filterRef.current?.focus(), 50);
+    }
+    if (!open) setFilter('');
+  }, [open, showSearch]);
+
   if (workspaces.length === 0) {
     return (
       <div className="text-sm text-muted-foreground px-3 py-2">
-        No workspaces configured
+        No agents configured
       </div>
     );
   }
@@ -152,31 +180,61 @@ function WorkspaceSelector({ workspaces, active, onSelect, health }: {
         {active && health?.[active.id] && (
           <div className={cn('w-2 h-2 led led-pulse shrink-0', ledColor[health[active.id]] || 'led-gray')} />
         )}
-        <span className="text-sm font-medium truncate">{active?.label || 'Select workspace'}</span>
+        <span className="text-sm font-medium truncate">{active?.label || 'Select agent'}</span>
         <ChevronDown className={cn('w-4 h-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 glass-card shadow-xl z-50 min-w-[220px] py-1">
-            {workspaces.map((ws) => {
-              const severity = health?.[ws.id] || 'gray';
-              return (
-                <button
-                  key={ws.id}
-                  onClick={() => { onSelect(ws); setOpen(false); }}
-                  className={cn(
-                    'w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2',
-                    active?.id === ws.id && 'bg-primary/10 text-primary'
-                  )}
-                >
-                  <div className={cn('w-2 h-2 led led-pulse shrink-0', ledColor[severity])} />
-                  <span className="truncate">{ws.label}</span>
-                  {active?.id === ws.id && <CheckCircle2 className="w-3.5 h-3.5 ml-auto shrink-0" />}
-                </button>
-              );
-            })}
+          <div className="absolute top-full left-0 mt-1 glass-card shadow-xl z-50 min-w-[260px] py-1 flex flex-col">
+            {showSearch && (
+              <div className="px-2 py-1.5 border-b border-border/50">
+                <div className="flex items-center gap-2 bg-muted rounded px-2 py-1">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <input
+                    ref={filterRef}
+                    type="text"
+                    placeholder="Filter agents…"
+                    value={filter}
+                    onChange={e => setFilter(e.target.value)}
+                    className="bg-transparent text-sm outline-none w-full placeholder:text-muted-foreground/60"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-y-auto max-h-[360px]">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                  No agents match &ldquo;{filter}&rdquo;
+                </div>
+              ) : (
+                filtered.map((ws) => {
+                  const severity = health?.[ws.id] || 'gray';
+                  return (
+                    <button
+                      key={ws.id}
+                      onClick={() => { onSelect(ws); setOpen(false); }}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2',
+                        active?.id === ws.id && 'bg-primary/10 text-primary'
+                      )}
+                    >
+                      <div className={cn('w-2 h-2 led led-pulse shrink-0', ledColor[severity])} />
+                      <span className="truncate">{ws.label}</span>
+                      {active?.id === ws.id && <CheckCircle2 className="w-3.5 h-3.5 ml-auto shrink-0" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {workspaces.length > 8 && (
+              <div className="px-3 py-1.5 border-t border-border/50 text-[10px] text-muted-foreground text-center">
+                {filtered.length} of {workspaces.length} agents
+              </div>
+            )}
           </div>
         </>
       )}
@@ -184,107 +242,11 @@ function WorkspaceSelector({ workspaces, active, onSelect, health }: {
   );
 }
 
-// --- Settings Panel: Sortable Workspace Row ---
-
-function SortableWorkspaceRow({ ws, onRemove }: { ws: Workspace; onRemove: (id: string) => void }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: ws.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : undefined,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        'flex items-center gap-2 p-2 rounded-lg border border-border bg-card',
-        isDragging && 'opacity-70 shadow-lg'
-      )}
-    >
-      <button
-        className="cursor-grab active:cursor-grabbing p-1 text-muted-foreground hover:text-foreground"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="w-4 h-4" />
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{ws.label}</div>
-        <div className="text-xs text-muted-foreground font-mono truncate">{ws.path}</div>
-      </div>
-      <button
-        onClick={() => onRemove(ws.id)}
-        className="p-1 text-muted-foreground hover:text-red-400 transition-colors"
-        title="Remove workspace"
-      >
-        <Trash2 className="w-3.5 h-3.5" />
-      </button>
-    </div>
-  );
-}
-
-// --- Settings Modal ---
-
-function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
-  workspaces: Workspace[];
-  onSave: (workspaces: Workspace[]) => void;
+function SettingsModal({ onClose, connected, connecting }: {
   onClose: () => void;
   connected: boolean;
   connecting: boolean;
 }) {
-  const [editableWorkspaces, setEditableWorkspaces] = useState<Workspace[]>(workspaces);
-  const [newLabel, setNewLabel] = useState('');
-  const [newPath, setNewPath] = useState('');
-  const [dirty, setDirty] = useState(false);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setEditableWorkspaces(items => {
-        const oldIndex = items.findIndex(i => i.id === active.id);
-        const newIndex = items.findIndex(i => i.id === over.id);
-        setDirty(true);
-        return arrayMove(items, oldIndex, newIndex);
-      });
-    }
-  }
-
-  function handleRemove(id: string) {
-    setEditableWorkspaces(prev => prev.filter(ws => ws.id !== id));
-    setDirty(true);
-  }
-
-  function handleAdd() {
-    if (!newLabel.trim() || !newPath.trim()) return;
-    const id = newLabel.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    setEditableWorkspaces(prev => [...prev, { id, label: newLabel.trim(), path: newPath.trim() }]);
-    setNewLabel('');
-    setNewPath('');
-    setDirty(true);
-  }
-
-  function handleSave() {
-    onSave(editableWorkspaces);
-    setDirty(false);
-  }
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
       <div className="glass-card p-6 w-full max-w-lg mx-4 space-y-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -293,7 +255,6 @@ function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
           <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="w-4 h-4" /></button>
         </div>
 
-        {/* Gateway Info */}
         <div className="space-y-3 text-sm">
           <div>
             <label className="text-xs text-muted-foreground">Gateway URL</label>
@@ -310,64 +271,13 @@ function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
           </div>
         </div>
 
-        {/* Workspaces Section */}
-        <div>
-          <h3 className="text-sm font-semibold mb-2">Agent Workspaces</h3>
-          <p className="text-xs text-muted-foreground mb-3">Drag to reorder priority. First workspace is the default.</p>
-
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={editableWorkspaces.map(w => w.id)} strategy={verticalListSortingStrategy}>
-              <div className="space-y-2">
-                {editableWorkspaces.map(ws => (
-                  <SortableWorkspaceRow key={ws.id} ws={ws} onRemove={handleRemove} />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-
-          {editableWorkspaces.length === 0 && (
-            <div className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">
-              No workspaces configured. Add one below.
-            </div>
-          )}
-
-          {/* Add Workspace */}
-          <div className="mt-3 space-y-2 p-3 border border-border rounded-lg bg-muted/30">
-            <div className="text-xs font-medium text-muted-foreground">Add Workspace</div>
-            <input
-              type="text"
-              placeholder="Label (e.g. Rocket 🚀)"
-              className="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:border-primary/50"
-              value={newLabel}
-              onChange={e => setNewLabel(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Path (e.g. /home/neg0/.openclaw/workspace-rocket)"
-              className="w-full bg-background border border-border rounded px-3 py-1.5 text-sm font-mono outline-none focus:border-primary/50"
-              value={newPath}
-              onChange={e => setNewPath(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleAdd()}
-            />
-            <button
-              onClick={handleAdd}
-              disabled={!newLabel.trim() || !newPath.trim()}
-              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded bg-accent hover:bg-accent/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add
-            </button>
-          </div>
+        <div className="space-y-2 text-sm">
+          <h3 className="text-sm font-semibold">Agent Config</h3>
+          <p className="text-xs text-muted-foreground">
+            Agents are auto-populated from <code className="bg-muted px-1 py-0.5 rounded text-[11px]">openclaw.json</code>.
+            Edit that file to add or remove agents.
+          </p>
         </div>
-
-        {/* Save */}
-        {dirty && (
-          <button
-            onClick={handleSave}
-            className="w-full py-2 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
-          >
-            Save Changes
-          </button>
-        )}
       </div>
     </div>
   );
@@ -375,11 +285,11 @@ function SettingsModal({ workspaces, onSave, onClose, connected, connecting }: {
 
 // --- Main Page ---
 
-export default function MissionControl() {
+function MissionControlInner() {
   const searchParams = useSearchParams();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'files' | 'prs' | 'goals'>(
-    (searchParams.get('tab') as 'files' | 'prs' | 'goals') || 'goals'
+  const [activeTab, setActiveTab] = useState<'warroom' | 'ideas' | 'projects' | 'agents' | 'tasks' | 'infra' | 'settings'>(
+    (searchParams.get('tab') as 'warroom' | 'ideas' | 'projects' | 'agents' | 'tasks' | 'infra' | 'settings') || 'warroom'
   );
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [searchSelectedFile, setSearchSelectedFile] = useState<string | null>(
@@ -390,11 +300,11 @@ export default function MissionControl() {
   );
   const [lastSyncTs, setLastSyncTs] = useState<number>(Date.now());
   const [lastSyncLabel, setLastSyncLabel] = useState('just now');
-  const [showSettings, setShowSettings] = useState(false);
 
   // Workspace state
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
+  const [booting, setBooting] = useState(true);
 
   // Gateway connection
   const { connected, connecting } = useGatewayStream({
@@ -422,7 +332,22 @@ export default function MissionControl() {
   // Per-workspace health status for LED indicators
   const [workspaceHealth, setWorkspaceHealth] = useState<Record<string, 'red' | 'yellow' | 'green' | 'gray'>>({});
 
-  // URL sync helper — pushes state to browser history
+  // Dashboard data (War Room)
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [showCostBreakdown, setShowCostBreakdown] = useState(false);
+
+  // Agents tab — master/detail state
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [agentDetailTab, setAgentDetailTab] = useState<'overview' | 'goals' | 'schedule' | 'files'>('overview');
+  const [agentSearchQuery, setAgentSearchQuery] = useState('');
+
+  // My Tasks (for War Room)
+  interface MyTask { id: string; title: string; status: string; priority: string; goal?: { id: string; title: string } | null; project?: { id: string; name: string } | null }
+  const [myTasks, setMyTasks] = useState<MyTask[]>([]);
+
+  // URL sync helper
   function syncUrl(overrides: { ws?: string; tab?: string; file?: string | null; q?: string | null } = {}) {
     const params = new URLSearchParams(window.location.search);
     const updates: Record<string, string | null> = {
@@ -437,7 +362,6 @@ export default function MissionControl() {
     }
     const qs = params.toString();
     const newUrl = qs ? `?${qs}` : window.location.pathname;
-    // Only push if URL actually changed
     if (newUrl !== `${window.location.pathname}${window.location.search}`) {
       window.history.pushState({}, '', newUrl);
     }
@@ -448,7 +372,7 @@ export default function MissionControl() {
     function handlePopState() {
       const params = new URLSearchParams(window.location.search);
       const urlWs = params.get('ws');
-      const urlTab = params.get('tab') as 'files' | 'prs' | 'goals' | null;
+      const urlTab = params.get('tab') as 'warroom' | 'projects' | 'agents' | 'tasks' | 'infra' | null;
       const urlFile = params.get('file');
       const urlQ = params.get('q');
 
@@ -472,7 +396,6 @@ export default function MissionControl() {
         if (res.ok) {
           const data: Workspace[] = await res.json();
           setWorkspaces(data);
-          // Restore from URL or default to first
           const urlWs = searchParams.get('ws');
           const match = urlWs ? data.find(w => w.id === urlWs) : null;
           if (match) {
@@ -483,9 +406,60 @@ export default function MissionControl() {
         }
       } catch (e) {
         console.error('Failed to load workspaces:', e);
+      } finally {
+        setBooting(false);
       }
     }
     loadWorkspaces();
+  }, []);
+
+  // Fetch dashboard data for War Room
+  useEffect(() => {
+    async function fetchDashboard() {
+      try {
+        const res = await fetch('/api/dashboard');
+        if (res.ok) {
+          const data = await res.json();
+          setDashboardData(data);
+        }
+      } catch (e) {
+        console.error('Failed to load dashboard:', e);
+      }
+    }
+    fetchDashboard();
+    const interval = setInterval(fetchDashboard, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch My Tasks for War Room
+  useEffect(() => {
+    async function fetchMyTasks() {
+      try {
+        // Fetch tasks assigned to user (Dustin) or high-priority unassigned
+        const [userRes, criticalRes] = await Promise.all([
+          fetch('/api/tasks?assigneeId=dustin'),
+          fetch('/api/tasks?status=blocked'),
+        ]);
+        const userTasks: MyTask[] = userRes.ok ? await userRes.json() : [];
+        const blockedTasks: MyTask[] = criticalRes.ok ? await criticalRes.json() : [];
+        // Merge and deduplicate
+        const all = [...userTasks];
+        for (const t of blockedTasks) {
+          if (!all.find(x => x.id === t.id)) all.push(t);
+        }
+        // Sort: blocked first, then by priority
+        const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+        all.sort((a, b) => {
+          if (a.status === 'blocked' && b.status !== 'blocked') return -1;
+          if (b.status === 'blocked' && a.status !== 'blocked') return 1;
+          return (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+        });
+        setMyTasks(all.slice(0, 10));
+      } catch { /* silent */ }
+    }
+    fetchMyTasks();
+    const interval = setInterval(fetchMyTasks, 120000);
+    return () => clearInterval(interval);
   }, []);
 
   // Update "last sync" label
@@ -496,30 +470,41 @@ export default function MissionControl() {
     return () => clearInterval(timer);
   }, [lastSyncTs]);
 
+  /** Map DB goal record to legacy Goal shape for computeAlerts */
+  const mapDbGoalToLegacy = (dbGoal: { id: string; title: string; status: string; progress: number; ownerAgentId: string | null; createdAt: string; completedAt?: string | null }) => {
+    const statusMap: Record<string, string> = { complete: '🟢', in_progress: '🟡', blocked: '🔴', queued: '⚪' };
+    return {
+      id: dbGoal.id,
+      title: dbGoal.title,
+      status: statusMap[dbGoal.status] || '⚪',
+      progress: dbGoal.progress,
+      owner: dbGoal.ownerAgentId || 'unassigned',
+      blockers: [] as string[],
+      created: dbGoal.createdAt?.slice(0, 10),
+      completed: dbGoal.completedAt?.slice(0, 10),
+      priority: 0,
+    };
+  };
+
   // Fetch alerts and stats
   const fetchAlerts = useCallback(async () => {
-    const wsPath = activeWorkspace?.path;
     try {
-      const fetchArgs = wsPath
-        ? [
-          fetch('/api/github/prs?repo=neg-0/comp-iq'),
-          fetch(`/api/files/read?path=GOALS.md&workspace=${encodeURIComponent(wsPath)}`),
-          fetch('/api/sessions'),
-        ]
-        : [
-          fetch('/api/github/prs?repo=neg-0/comp-iq'),
-          Promise.resolve(new Response(JSON.stringify({ content: '' }))),
-          fetch('/api/sessions'),
-        ];
+      // Fetch goals from DB via /api/goals instead of parsing GOALS.md files
+      const agentId = activeWorkspace?.id;
+      const goalsUrl = agentId ? `/api/goals?agentId=${encodeURIComponent(agentId)}` : '/api/goals';
 
-      const [prsRes, goalsRes, agentsRes] = await Promise.all(fetchArgs);
+      const [prsRes, goalsRes, agentsRes] = await Promise.all([
+        fetch('/api/github/prs?repo=neg-0/comp-iq'),
+        fetch(goalsUrl),
+        fetch('/api/sessions'),
+      ]);
 
       const prsData = prsRes.ok ? await prsRes.json() : { prs: [] };
-      const goalsData = goalsRes.ok ? await goalsRes.json() : { content: '' };
+      const goalsData = goalsRes.ok ? await goalsRes.json() : { goals: [] };
       const agentsData = agentsRes.ok ? await agentsRes.json() : { sessions: [] };
 
       const prs = prsData.prs || [];
-      const goals = parseGoals(goalsData.content || '');
+      const goals = (goalsData.goals || []).map(mapDbGoalToLegacy);
       const agents = (agentsData.sessions || []).map((session: { sessionKey: string; status: string; lastActivityMs?: number; label?: string }) => ({
         id: session.sessionKey,
         status: session.status === 'active' ? 'running' : (session.status as 'running' | 'completed' | 'failed' | 'idle'),
@@ -536,18 +521,19 @@ export default function MissionControl() {
         agentsActive: agents.filter((a: { status: string }) => a.status === 'running' || a.status === 'active').length,
       });
 
-      // Compute per-workspace health from alerts
-      // Fetch goals for each workspace and compute alerts per workspace
+      // Compute per-workspace health from DB goals
       const severityOrder: Record<string, number> = { red: 0, yellow: 1, gray: 2, green: 3 };
       const healthMap: Record<string, 'red' | 'yellow' | 'green' | 'gray'> = {};
 
-      await Promise.all(workspaces.map(async (ws) => {
+      // Fetch all goals once, group by owner for per-workspace health
+      const allGoalsRes = await fetch('/api/goals');
+      const allGoalsData = allGoalsRes.ok ? await allGoalsRes.json() : { goals: [] };
+      const allGoals = (allGoalsData.goals || []).map(mapDbGoalToLegacy);
+
+      for (const ws of workspaces) {
         try {
-          const wsGoalsRes = await fetch(`/api/files/read?path=GOALS.md&workspace=${encodeURIComponent(ws.path)}`);
-          const wsGoalsData = wsGoalsRes.ok ? await wsGoalsRes.json() : { content: '' };
-          const wsGoals = parseGoals(wsGoalsData.content || '');
+          const wsGoals = allGoals.filter((g: { owner: string }) => g.owner === ws.id);
           const wsAlerts = computeAlerts(prs, wsGoals, agents);
-          // Find most severe alert level
           let worstLevel: 'red' | 'yellow' | 'green' | 'gray' = 'green';
           for (const a of wsAlerts) {
             if (severityOrder[a.level] < severityOrder[worstLevel]) {
@@ -558,7 +544,7 @@ export default function MissionControl() {
         } catch {
           healthMap[ws.id] = 'gray';
         }
-      }));
+      }
       setWorkspaceHealth(healthMap);
 
       setLastSyncTs(Date.now());
@@ -582,66 +568,57 @@ export default function MissionControl() {
     syncUrl({ ws: ws.id, file: null, q: null });
   }
 
-  // Save workspaces from settings
-  async function saveWorkspaces(updated: Workspace[]) {
-    try {
-      const res = await fetch('/api/workspaces', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
-      });
-      if (res.ok) {
-        setWorkspaces(updated);
-        // If active workspace was removed, switch to first
-        if (activeWorkspace && !updated.find(w => w.id === activeWorkspace.id)) {
-          setActiveWorkspace(updated[0] || null);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to save workspaces:', e);
-    }
-  }
-
-  // Handle search result selecting a file (possibly from another workspace)
+  // Handle search result selecting a file
   function handleSearchSelect(filePath: string, workspacePath: string, query: string) {
-    // Switch workspace if needed
     const targetWs = workspaces.find(w => w.path === workspacePath);
     if (targetWs && targetWs.id !== activeWorkspace?.id) {
       setActiveWorkspace(targetWs);
     }
     setSearchSelectedFile(filePath);
     setHighlightQuery(query || null);
-    setActiveTab('files');
+    setActiveTab('agents');
     syncUrl({
       ws: targetWs?.id,
-      tab: 'files',
+      tab: 'agents',
       file: filePath,
       q: query || null,
     });
   }
 
+  // Handle fleet card click — navigate to Agents tab with agent selected
+  function handleFleetSelect(agentId: string) {
+    setSelectedAgentId(agentId);
+    setAgentDetailTab('overview');
+    setActiveTab('agents');
+    syncUrl({ tab: 'agents' });
+    // Also try to activate the matching workspace
+    const ws = workspaces.find(w => w.id === agentId);
+    if (ws) {
+      setActiveWorkspace(ws);
+      syncUrl({ ws: ws.id, tab: 'agents' });
+    }
+  }
+
   return (
     <div className="min-h-screen text-foreground pb-12 relative">
-      {/* Animated mesh background */}
       <div className="mesh-bg fixed inset-0 -z-10">
         <div className="mesh-bg-accent" />
       </div>
-      {/* Gateway offline banner */}
       <GatewayOfflineBanner {...gatewayHealth} />
-      {/* Header */}
       <header className="sticky top-0 z-50 glass-card rounded-none border-x-0 border-t-0">
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center">
-          {/* Left: Workspace Selector */}
           <div className="flex-1 flex items-center">
-            <WorkspaceSelector
-              workspaces={workspaces}
-              active={activeWorkspace}
-              onSelect={switchWorkspace}
-              health={workspaceHealth}
-            />
+            {activeWorkspace && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className={cn(
+                  'w-2 h-2 rounded-full',
+                  workspaceHealth[activeWorkspace.id] === 'green' ? 'bg-emerald-400' : workspaceHealth[activeWorkspace.id] === 'yellow' ? 'bg-yellow-400' : workspaceHealth[activeWorkspace.id] === 'red' ? 'bg-red-500' : 'bg-zinc-500'
+                )} />
+                <span className="font-medium text-foreground">{activeWorkspace.label || activeWorkspace.id}</span>
+              </div>
+            )}
           </div>
 
-          {/* Center: Logo Title */}
           <h1 className="select-none flex items-center gap-0">
             <span className="text-lg font-light tracking-[0.3em] uppercase text-foreground/70">
               Mission
@@ -651,7 +628,6 @@ export default function MissionControl() {
               <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                 CONTR
               </span>
-              {/* Radar icon replacing the "O" */}
               <svg
                 width="22"
                 height="22"
@@ -676,7 +652,6 @@ export default function MissionControl() {
             </span>
           </h1>
 
-          {/* Right: Status + Settings */}
           <div className="flex-1 flex items-center justify-end gap-3">
             <div className="hidden md:flex items-center gap-2">
               <div className={cn(
@@ -687,11 +662,7 @@ export default function MissionControl() {
                 {connected ? 'Live' : connecting ? 'Connecting...' : 'Offline'}
               </span>
             </div>
-            <button className="p-2 hover:bg-accent rounded-lg" title="Settings" onClick={() => setShowSettings(true)}>
-              <Settings className="w-4 h-4" />
-            </button>
 
-            {/* Mobile menu toggle */}
             <button
               className="md:hidden p-2 hover:bg-accent rounded-lg"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -703,14 +674,47 @@ export default function MissionControl() {
       </header>
 
       <main className="max-w-[1600px] mx-auto px-4 py-4">
-        {/* No workspaces empty state */}
-        {workspaces.length === 0 ? (
+        {booting ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="text-5xl mb-6 animate-pulse">🛰️</div>
+            <h2 className="text-lg font-semibold tracking-widest uppercase text-foreground/90 mb-4"
+              style={{ fontFamily: 'var(--font-mono, monospace)' }}>
+              Mission Control
+            </h2>
+            <div className="w-64 h-1 bg-muted rounded-full overflow-hidden mb-6">
+              <div className="h-full bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-500 rounded-full animate-boot-bar" />
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground font-mono">
+              <p className="animate-fade-in" style={{ animationDelay: '0ms' }}>▸ Connecting to gateway…</p>
+              <p className="animate-fade-in" style={{ animationDelay: '400ms' }}>▸ Scanning workspaces…</p>
+              <p className="animate-fade-in" style={{ animationDelay: '800ms' }}>▸ Loading fleet telemetry…</p>
+            </div>
+            <style jsx>{`
+              @keyframes boot-bar {
+                0%   { width: 0%; }
+                60%  { width: 70%; }
+                100% { width: 100%; }
+              }
+              @keyframes fade-in {
+                0%   { opacity: 0; transform: translateY(4px); }
+                100% { opacity: 1; transform: translateY(0); }
+              }
+              .animate-boot-bar {
+                animation: boot-bar 2s ease-out forwards;
+              }
+              .animate-fade-in {
+                opacity: 0;
+                animation: fade-in 0.5s ease-out forwards;
+              }
+            `}</style>
+          </div>
+        ) : workspaces.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="text-4xl mb-4">🛰️</div>
             <h2 className="text-lg font-semibold mb-2">No workspaces configured</h2>
             <p className="text-sm text-muted-foreground mb-4">Add an agent workspace in Settings to get started.</p>
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => { setActiveTab('settings'); syncUrl({ tab: 'settings' }); }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
             >
               <Settings className="w-4 h-4" /> Open Settings
@@ -718,7 +722,6 @@ export default function MissionControl() {
           </div>
         ) : (
           <>
-            {/* Workspace Search */}
             <div className="mb-4">
               <WorkspaceSearch
                 onSelectFile={handleSearchSelect}
@@ -726,7 +729,6 @@ export default function MissionControl() {
               />
             </div>
 
-            {/* Alert Banner — only for critical (red) alerts */}
             {alerts.some(a => a.level === 'red') && (
               <div className="mb-4 glass-card px-4 py-3 flex items-center gap-3 glow-red text-red-200">
                 <AlertTriangle className="w-4 h-4" />
@@ -736,97 +738,418 @@ export default function MissionControl() {
               </div>
             )}
 
-            {/* Stats Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <StatCard label="PRs Open" value={stats.prsOpen ?? '—'} icon={GitPullRequest} />
-              <StatCard label="Ready to Merge" value={stats.prsReadyToMerge ?? '—'} icon={CheckCircle2} trend={stats.prsReadyToMerge != null && stats.prsReadyToMerge > 0 ? 'up' : undefined} />
-              <StatCard label="Blocked" value={stats.prsBlocked ?? '—'} icon={XCircle} trend={stats.prsBlocked != null && stats.prsBlocked > 0 ? 'down' : undefined} />
-              <StatCard label="Agents Active" value={stats.agentsActive ?? '—'} icon={Zap} />
+            <div className="flex gap-1 mb-4 border-b border-border/50 pb-px">
+              {(['warroom', 'ideas', 'projects', 'agents', 'tasks', 'infra', 'settings'] as const).map((tab) => {
+                const labels = {
+                  warroom: '🎯 War Room',
+                  ideas: '💡 Ideas',
+                  projects: '🚀 Projects',
+                  agents: '🤖 Agents',
+                  tasks: '📋 Tasks',
+                  infra: '☁️ Infra',
+                  settings: '⚙️ Settings',
+                };
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => { setActiveTab(tab); syncUrl({ tab }); }}
+                    className={cn(
+                      'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+                      activeTab === tab
+                        ? 'bg-accent text-foreground border-b-2 border-primary'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    )}
+                  >
+                    {labels[tab]}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Mobile Tab Selector */}
-            <div className="md:hidden flex gap-2 mb-4 overflow-x-auto pb-2">
-              {(['goals', 'files', 'prs'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => { setActiveTab(tab); syncUrl({ tab }); }}
-                  className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
-                    activeTab === tab
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-accent text-muted-foreground'
-                  )}
-                >
-                  {tab === 'files' && '📁 Files'}
-                  {tab === 'prs' && '📋 PRs'}
-                  {tab === 'goals' && '🎯 Goals'}
-                </button>
-              ))}
-            </div>
+            {/* ============ WAR ROOM TAB ============ */}
+            {activeTab === 'warroom' && (
+              <div className="space-y-4">
+                {/* Blockers Banner */}
+                <BlockerBanner blockers={dashboardData?.blockers ?? []} />
 
-            {/* Main 3-Column Grid */}
-            <div className="grid md:grid-cols-12 gap-4">
-              {/* Left Column: Files */}
-              <div className={cn(
-                'md:col-span-3',
-                activeTab !== 'files' && 'hidden md:block'
-              )}>
-                <FileBrowser
-                  className="h-[600px]"
-                  initialFile={searchSelectedFile}
-                  workspace={activeWorkspace?.path}
-                  highlightQuery={highlightQuery}
-                />
+                {/* Row 1: MRR Goal Bar — full width */}
+                <div className="glass-card p-4">
+                  <MrrMeter
+                    current={dashboardData?.global.mrr_total ?? 0}
+                    milestones={dashboardData?.milestones}
+                  />
+                </div>
+
+                {/* Row 2: Key Stats — 4 cards in a row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="glass-card text-center p-3">
+                    <div className="text-lg font-bold font-mono">{dashboardData?.global.active_agents ?? 0}<span className="text-xs text-muted-foreground">/{dashboardData?.global.total_fleet ?? 0}</span></div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Agents</div>
+                  </div>
+                  <div className="glass-card text-center p-3">
+                    <div className="text-lg font-bold font-mono">{dashboardData?.global.active_projects ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Projects</div>
+                  </div>
+                  <div className="glass-card text-center p-3">
+                    <div className="text-lg font-bold font-mono">{dashboardData?.global.total_users ?? 0}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Users</div>
+                  </div>
+                  <div
+                    className="glass-card text-center p-3 cursor-pointer hover:ring-1 hover:ring-red-400/40 transition-all"
+                    onClick={() => setShowCostBreakdown(true)}
+                    title="Click to open cost ledger"
+                  >
+                    <div className="text-lg font-bold font-mono text-red-400">${dashboardData?.global.burn_rate_est?.toFixed(2) ?? '0.00'}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Burn/mo ✎</div>
+                  </div>
+                </div>
+
+
+                {/* Row 2: Fleet Grid (compact) */}
+                <div className="glass-card px-4 py-3">
+                  <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" /> Fleet Status
+                  </h2>
+                  <AgentGrid
+                    agents={dashboardData?.fleet ?? []}
+                    onSelectAgent={handleFleetSelect}
+                  />
+                </div>
+
+                {/* Row 3: My Tasks + Blockers side by side */}
+                <div className="grid md:grid-cols-2 gap-4">
+                  {/* My Tasks */}
+                  <div className="glass-card px-4 py-3">
+                    <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <ListTodo className="w-3.5 h-3.5" /> My Tasks
+                    </h2>
+                    {myTasks.length === 0 ? (
+                      <div className="text-sm text-muted-foreground italic py-2">No tasks assigned to you</div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {myTasks.map(t => (
+                          <div key={t.id} className={cn(
+                            'flex items-center gap-2 px-2 py-1.5 rounded text-sm',
+                            t.status === 'blocked' ? 'bg-red-500/10 border border-red-500/20' : 'bg-card/40',
+                          )}>
+                            <span className={cn(
+                              'text-[10px] font-mono px-1.5 py-0.5 rounded',
+                              t.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
+                                t.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
+                                  'bg-zinc-500/20 text-zinc-400'
+                            )}>{t.priority}</span>
+                            <span className="flex-1 truncate">{t.title}</span>
+                            {t.status === 'blocked' && <span className="text-[10px] text-red-400 font-medium">BLOCKED</span>}
+                            {t.goal && <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">{t.goal.title}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Alerts / Fires */}
+                  <div className="glass-card px-4 py-3">
+                    <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Flame className="w-3.5 h-3.5 text-orange-400" /> Fires & Alerts
+                    </h2>
+                    {alerts.length === 0 ? (
+                      <div className="text-sm text-emerald-400/80 italic py-2">All clear — no fires 🎉</div>
+                    ) : (
+                      <div className="space-y-1">
+                        {alerts.slice(0, 8).map((alert) => (
+                          <AlertRow key={alert.id} alert={alert} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
+            )}
 
-              {/* Center Column: Goals + Sub-Agents */}
-              <div className={cn(
-                'md:col-span-5 space-y-4',
-                activeTab !== 'goals' && 'hidden md:block'
-              )}>
-                <GoalsTracker workspace={activeWorkspace?.path} />
-                <SubAgentsPanel />
-              </div>
-
-              {/* Right Column: PRs + Alerts */}
-              <div className={cn(
-                'md:col-span-4 space-y-4',
-                activeTab !== 'prs' && 'hidden md:block'
-              )}>
-                <PRQueue />
-
-                {/* Alerts */}
-                {alerts.length > 0 && (
-                  <div className="glass-card overflow-hidden">
-                    <div className="p-3 border-b border-border flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-orange-400" />
-                      <h2 className="font-semibold">Alerts</h2>
-                    </div>
-                    <div className="p-2">
-                      {alerts.map((alert) => (
-                        <AlertRow key={alert.id} alert={alert} />
-                      ))}
-                    </div>
+            {/* ============ PROJECTS TAB ============ */}
+            {/* ============ IDEAS TAB ============ */}
+            {activeTab === 'ideas' && (
+              <>
+                {selectedIdeaId ? (
+                  <IdeaDetail
+                    ideaId={selectedIdeaId}
+                    onBack={() => setSelectedIdeaId(null)}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    <IdeasKanban
+                      items={dashboardData?.pipeline ?? []}
+                      onCardClick={(ideaId) => setSelectedIdeaId(ideaId)}
+                    />
                   </div>
                 )}
+              </>
+            )}
+
+            {/* ============ PROJECTS TAB ============ */}
+            {activeTab === 'projects' && (
+              <>
+                {selectedProjectId ? (
+                  <ProjectDetail
+                    projectId={selectedProjectId}
+                    onBack={() => setSelectedProjectId(null)}
+                  />
+                ) : (
+                  <ProjectsGrid onSelectProject={setSelectedProjectId} activeTab={activeTab} />
+                )}
+              </>
+            )}
+
+            {/* ============ AGENTS TAB ============ */}
+            {activeTab === 'agents' && (() => {
+              const fleet = dashboardData?.fleet ?? [];
+              const filteredAgents = agentSearchQuery
+                ? fleet.filter(a =>
+                  a.name?.toLowerCase().includes(agentSearchQuery.toLowerCase()) ||
+                  a.id.toLowerCase().includes(agentSearchQuery.toLowerCase()) ||
+                  a.status?.toLowerCase().includes(agentSearchQuery.toLowerCase())
+                )
+                : fleet;
+              const selectedAgent = fleet.find(a => a.id === selectedAgentId) || null;
+
+              return (
+                <>
+
+
+                  {/* Master/Detail Layout */}
+                  <div className="grid md:grid-cols-12 gap-4" style={{ minHeight: '600px' }}>
+                    {/* LEFT: Agent List */}
+                    <div className="md:col-span-4 lg:col-span-3 glass-card overflow-hidden flex flex-col">
+                      <div className="p-3 border-b border-border">
+                        <input
+                          type="text"
+                          placeholder="Filter agents..."
+                          value={agentSearchQuery}
+                          onChange={(e) => setAgentSearchQuery(e.target.value)}
+                          className="w-full bg-card/60 border border-border/50 rounded-lg px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+                        />
+                        <div className="text-[10px] text-muted-foreground mt-1.5">
+                          {filteredAgents.length} agent{filteredAgents.length !== 1 ? 's' : ''}
+                          {agentSearchQuery && ` matching "${agentSearchQuery}"`}
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        {filteredAgents.map(agent => {
+                          const isSelected = agent.id === selectedAgentId;
+                          return (
+                            <button
+                              key={agent.id}
+                              onClick={() => {
+                                setSelectedAgentId(agent.id);
+                                setAgentDetailTab('overview');
+                              }}
+                              className={cn(
+                                'w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-border/30',
+                                isSelected
+                                  ? 'bg-primary/15 border-l-2 border-l-primary'
+                                  : 'hover:bg-accent/50'
+                              )}
+                            >
+                              <span className="text-lg flex-shrink-0">{agent.emoji}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{agent.name || agent.id}</div>
+                                <div className="text-[10px] text-muted-foreground truncate">{agent.status || '—'}</div>
+                              </div>
+                              <div className={cn(
+                                'w-2 h-2 rounded-full flex-shrink-0',
+                                agent.health === 'green' && 'bg-emerald-400',
+                                agent.health === 'yellow' && 'bg-yellow-400',
+                                agent.health === 'red' && 'bg-red-500',
+                                agent.health === 'gray' && 'bg-zinc-500',
+                              )} />
+                            </button>
+                          );
+                        })}
+                        {filteredAgents.length === 0 && (
+                          <div className="p-4 text-sm text-muted-foreground text-center italic">No agents match</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT: Detail Panel */}
+                    <div className="md:col-span-8 lg:col-span-9 flex flex-col">
+                      {selectedAgent ? (
+                        <>
+                          {/* Agent Header */}
+                          <div className="glass-card p-4 mb-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-3xl">{selectedAgent.emoji}</span>
+                                <div>
+                                  <h2 className="text-lg font-bold">{selectedAgent.name || selectedAgent.id}</h2>
+                                  <div className="text-sm text-muted-foreground">{selectedAgent.status || '—'}</div>
+                                </div>
+                                <div className={cn(
+                                  'px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider',
+                                  selectedAgent.health === 'green' && 'bg-emerald-500/20 text-emerald-400',
+                                  selectedAgent.health === 'yellow' && 'bg-yellow-500/20 text-yellow-400',
+                                  selectedAgent.health === 'red' && 'bg-red-500/20 text-red-400',
+                                  selectedAgent.health === 'gray' && 'bg-zinc-500/20 text-zinc-400',
+                                )}>
+                                  {selectedAgent.health === 'green' ? 'Healthy' : selectedAgent.health === 'yellow' ? 'Stale' : selectedAgent.health === 'red' ? 'Offline' : 'No Signal'}
+                                </div>
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {selectedAgent.last_updated ? `Last seen: ${selectedAgent.last_updated}` : 'Never reported'}
+                              </div>
+                            </div>
+                            {/* Doc quick-access */}
+                            {activeWorkspace && (
+                              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border/30">
+                                {['SOUL.md', 'IDENTITY.md', 'HEARTBEAT.md', 'AGENTS.md', 'TOOLS.md', 'USER.md'].map(doc => (
+                                  <DocPreviewButton
+                                    key={doc}
+                                    label={doc}
+                                    workspace={activeWorkspace.path}
+                                    filename={doc}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Detail Sub-tabs */}
+                          <div className="flex gap-1 mb-3">
+                            {(['overview', 'goals', 'schedule', 'files'] as const).map(tab => (
+                              <button
+                                key={tab}
+                                onClick={() => setAgentDetailTab(tab)}
+                                className={cn(
+                                  'px-3 py-1.5 text-xs font-medium rounded-lg transition-colors capitalize',
+                                  agentDetailTab === tab
+                                    ? 'bg-primary/20 text-primary border border-primary/30'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                                )}
+                              >
+                                {tab === 'overview' && '📊 '}
+                                {tab === 'goals' && '🎯 '}
+                                {tab === 'schedule' && '⏰ '}
+                                {tab === 'files' && '📁 '}
+                                {tab}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Detail Content */}
+                          <div className="flex-1">
+                            {agentDetailTab === 'overview' && (
+                              <div className="space-y-4">
+                                {/* Status + Mission from FleetCards data */}
+                                <div className="glass-card p-4">
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <div className="text-center p-2 bg-card/40 rounded-lg">
+                                      <div className="text-lg font-bold font-mono">{selectedAgent.status || '—'}</div>
+                                      <div className="text-[10px] text-muted-foreground uppercase">Status</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-card/40 rounded-lg">
+                                      <div className="text-lg font-bold font-mono">${selectedAgent.mrr ?? 0}</div>
+                                      <div className="text-[10px] text-muted-foreground uppercase">MRR</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-card/40 rounded-lg">
+                                      <div className="text-lg font-bold font-mono">{selectedAgent.users ?? 0}</div>
+                                      <div className="text-[10px] text-muted-foreground uppercase">Users</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-card/40 rounded-lg">
+                                      <div className="text-lg font-bold font-mono">{selectedAgent.health === 'green' ? '✓' : selectedAgent.health === 'yellow' ? '⚠' : '✗'}</div>
+                                      <div className="text-[10px] text-muted-foreground uppercase">Health</div>
+                                    </div>
+                                  </div>
+                                </div>
+                                {/* Mission info */}
+                                {selectedAgent.last_report && (
+                                  <div className="glass-card p-4">
+                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Last Report</h3>
+                                    <p className="text-sm font-mono text-foreground/80">{selectedAgent.last_report}</p>
+                                  </div>
+                                )}
+                                {/* Sub-agents if this is the master */}
+                                <SubAgentsPanel />
+                              </div>
+                            )}
+
+                            {agentDetailTab === 'goals' && (
+                              <div className="glass-card overflow-hidden">
+                                <GoalsPanel agentId={selectedAgentId || activeWorkspace?.id} />
+                              </div>
+                            )}
+
+                            {agentDetailTab === 'schedule' && (
+                              <div className="glass-card overflow-hidden p-4">
+                                <ScheduleManager />
+                              </div>
+                            )}
+
+                            {agentDetailTab === 'files' && (
+                              <FileBrowser
+                                className="h-[500px]"
+                                initialFile={searchSelectedFile}
+                                workspace={activeWorkspace?.path || '/home/neg0/.openclaw'}
+                                highlightQuery={highlightQuery}
+                              />
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        /* No agent selected — prompt */
+                        <div className="flex-1 flex flex-col items-center justify-center text-center glass-card p-8">
+                          <div className="text-5xl mb-4">🤖</div>
+                          <h3 className="text-lg font-semibold mb-2">Select an Agent</h3>
+                          <p className="text-sm text-muted-foreground max-w-md">
+                            Choose an agent from the list to view their status, goals, schedule, and workspace files.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+
+            {/* ============ TASKS TAB ============ */}
+            {activeTab === 'tasks' && (
+              <div className="h-[700px] flex flex-col">
+                <TaskBoard />
               </div>
-            </div>
+            )}
+
+            {/* ============ INFRA TAB ============ */}
+            {activeTab === 'infra' && (
+              <div className="min-h-[600px]">
+                <InfraMonitor />
+              </div>
+            )}
+
+            {/* ============ SETTINGS TAB ============ */}
+            {activeTab === 'settings' && (
+              <div className="min-h-[600px]">
+                <SettingsPage connected={connected} connecting={connecting} />
+              </div>
+            )}
           </>
         )}
       </main>
 
-      {/* Settings Modal */}
-      {showSettings && (
-        <SettingsModal
-          workspaces={workspaces}
-          onSave={saveWorkspaces}
-          onClose={() => setShowSettings(false)}
-          connected={connected}
-          connecting={connecting}
+
+
+      {/* Legacy modal — only show when NOT on Ideas tab (Ideas tab uses inline IdeaDetail) */}
+      {activeTab !== 'ideas' && (
+        <IdeaDetailModal
+          ideaId={selectedIdeaId}
+          onClose={() => setSelectedIdeaId(null)}
+          onSpawnCeo={(ideaId) => console.log('[MC] Spawn CEO requested for:', ideaId)}
         />
       )}
 
-      {/* Footer Status Bar */}
+      {showCostBreakdown && (
+        <CostBreakdown onClose={() => setShowCostBreakdown(false)} />
+      )}
+
       <footer className="fixed bottom-0 left-0 right-0 glass-card rounded-none border-x-0 border-b-0 px-4 py-2">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-4">
@@ -836,6 +1159,13 @@ export default function MissionControl() {
               {connected ? '🟢' : '⚪'} Gateway: {connected ? 'Connected' : 'Disconnected'}
             </span>
             <span>📁 {activeWorkspace?.path || 'No workspace selected'}</span>
+            {dashboardData?.cron && (
+              <CronHealth
+                total={dashboardData.cron.total}
+                ok={dashboardData.cron.ok}
+                errors={dashboardData.cron.errors}
+              />
+            )}
           </div>
           <div className="flex items-center gap-4">
             <span>Last sync: {lastSyncLabel}</span>
@@ -843,6 +1173,14 @@ export default function MissionControl() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function MissionControl() {
+  return (
+    <Suspense>
+      <MissionControlInner />
+    </Suspense>
   );
 }
 

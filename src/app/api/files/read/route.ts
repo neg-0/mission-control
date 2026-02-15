@@ -37,7 +37,14 @@ export async function GET(request: NextRequest) {
       content,
       modifiedAt: stats.mtime.toISOString(),
     });
-  } catch (error) {
+  } catch (error: unknown) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      return NextResponse.json({ error: 'File not found', path: fullPath }, { status: 404 });
+    }
+    if (err.code === 'EACCES') {
+      return NextResponse.json({ error: 'Permission denied', path: fullPath }, { status: 403 });
+    }
     console.error('Failed to read file:', error);
     return NextResponse.json({ error: 'Failed to read file' }, { status: 500 });
   }

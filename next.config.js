@@ -3,6 +3,7 @@ const nextConfig = {
   experimental: {
     // Exclude ws from bundling - use Node.js native module (Next.js 14 syntax)
     serverComponentsExternalPackages: ['ws'],
+    instrumentationHook: true,
   },
   env: {
     OPENCLAW_GATEWAY_URL: process.env.OPENCLAW_GATEWAY_URL,
