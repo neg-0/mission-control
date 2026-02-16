@@ -13,6 +13,7 @@
  * 6. Recalculates nextRunAt for each processed schedule
  */
 
+import { buildHeartbeatContext } from '@/lib/build-heartbeat-context';
 import { getNextCronRun } from '@/lib/orchestrator';
 import { prisma } from '@/lib/prisma';
 
@@ -116,6 +117,7 @@ export async function executeTick(): Promise<TickSummary> {
     // 5. Wake the agent via OpenClaw hooks endpoint
     if (gatewayUrl && hooksToken) {
       try {
+        const contextMessage = await buildHeartbeatContext(schedule.agent.id, schedule.name);
         const response = await fetch(`${gatewayUrl}/hooks/agent`, {
           method: 'POST',
           headers: {
@@ -123,7 +125,7 @@ export async function executeTick(): Promise<TickSummary> {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            message: schedule.payload || `⏰ Scheduled: ${schedule.name}`,
+            message: contextMessage,
             name: `MC Heartbeat: ${schedule.name}`,
             agentId: schedule.agent.id,
             wakeMode: 'now',
@@ -154,7 +156,7 @@ export async function executeTick(): Promise<TickSummary> {
         toId: schedule.agentId,
         channel: 'schedule',
         subject: schedule.name,
-        body: schedule.payload || `Scheduled: ${schedule.name}`,
+        body: `Context-enriched heartbeat for ${schedule.agent.id}`,
         status: wakeStatus === 'ok' ? 'delivered' : wakeStatus === 'error' ? 'failed' : 'sent',
         metadata: {
           scheduleId: schedule.id,

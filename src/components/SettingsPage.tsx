@@ -3,6 +3,7 @@
 import {
   Activity,
   AlertTriangle,
+  BookOpen,
   Check,
   ChevronDown,
   Clock,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '../lib/utils';
+import HeartbeatTuning from './HeartbeatTuning';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +37,8 @@ interface OrchestratorConfig {
   tickIntervalMs: number;
   tpmLimit: number | null;
   quotaResetHours: number;
+  journalEntries: number;
+  mdInjections: string[] | null;
   enabled: boolean;
 }
 
@@ -1054,6 +1058,39 @@ export function SettingsPage({
               <span>Stagger: {formatMs(data.config.staggerDelayMs)}</span>
               <span>Max wakes/tick: {data.config.maxWakesPerTick}</span>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ============ HEARTBEAT CONTEXT TUNING ============ */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => toggleSection('context')}
+          className="w-full flex items-center gap-3 px-5 py-3 text-left"
+        >
+          <BookOpen className="w-4 h-4 text-amber-400" />
+          <span className="text-sm font-semibold text-zinc-200 flex-1">Heartbeat Context</span>
+          <span className="text-[10px] text-zinc-600 mr-2">
+            {data?.config?.journalEntries ?? 5} journal entries · {(data?.config?.mdInjections as string[] || []).length} injections
+          </span>
+          <ChevronDown
+            className={cn('w-4 h-4 text-zinc-500 transition-transform',
+              expandedSection.includes('context') && 'rotate-180'
+            )}
+          />
+        </button>
+
+        {expandedSection.includes('context') && data?.config && (
+          <div className="px-5 pb-5 border-t border-border/30 pt-4">
+            <HeartbeatTuning
+              agents={data.agents}
+              config={{
+                journalEntries: data.config.journalEntries ?? 5,
+                mdInjections: (data.config.mdInjections as string[]) || [],
+              }}
+              onSave={(updates) => saveConfig(updates as Partial<OrchestratorConfig>)}
+              saving={saving}
+            />
           </div>
         )}
       </div>

@@ -162,6 +162,7 @@ model Task {
   title           String
   status          String   @default("todo") // "todo", "in_progress", "review", "done", "blocked"
   priority        String   @default("medium") // "low", "medium", "high", "critical"
+  taskType        String   @default("one_off") // "one_off" | "standing"
   
   description     String?
   
@@ -299,6 +300,8 @@ model OrchestratorConfig {
   tickIntervalMs  Int      @default(60000)  // 60s — how often the internal timer fires
   tpmLimit        Int?     // Tokens per minute limit (user-configurable)
   quotaResetHours Float    @default(5.0)    // Quota reset window in hours
+  journalEntries  Int      @default(5)      // How many recent journal entries to include in wake context
+  mdInjections    Json?    // Array of markdown file paths to inject into wake context, e.g. ["/path/to/PLAYBOOK.md"]
   enabled         Boolean  @default(true)
   updatedAt       DateTime @updatedAt
 }
@@ -409,4 +412,21 @@ model Escalation {
   resolvedAt      DateTime?
 
   @@index([status, severity])
+}
+
+// -----------------------------------------------------------------------------
+// C2: Agent Journal (Persistent Memory Across Isolated Sessions)
+// -----------------------------------------------------------------------------
+
+model AgentJournal {
+  id          String   @id @default(uuid())
+  agentId     String
+  did         String   // What was accomplished this heartbeat
+  next        String?  // What the agent intends to do next
+  status      String   @default("healthy") // "healthy" | "blocked" | "idle" | "error"
+  blockers    String?  // What's preventing progress
+  metadata    Json?    // Optional structured data (PR numbers, task IDs, etc.)
+  createdAt   DateTime @default(now())
+
+  @@index([agentId, createdAt])
 }

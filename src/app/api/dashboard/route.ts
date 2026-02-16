@@ -85,17 +85,40 @@ export async function GET() {
       agentStatsMap[ac.agentId] = ac;
     }
 
+    // Fetch latest journal entry per agent for dashboard health derivation
+    const latestJournals = await prisma.agentJournal.findMany({
+      where: { agentId: { in: dbAgents.map(a => a.id) } },
+      orderBy: { createdAt: 'desc' },
+      distinct: ['agentId'],
+    });
+    const journalMap = new Map(latestJournals.map(j => [j.agentId, j]));
+
     const fleet = dbAgents.map(agent => {
       const lastReport = agent.reports[0];
       const agentStats = agentStatsMap[agent.id];
+      const latestJournal = journalMap.get(agent.id);
 
       // Look up specific metric types from DB
       const mrrMetric = agent.metrics.find(m => m.type === 'mrr');
       const usersMetric = agent.metrics.find(m => m.type === 'users');
 
-      // Calculate health (Heartbeat check)
+      // Calculate health — prefer journal status, fallback to heartbeat timestamp
       let health = 'gray';
-      if (agent.lastHeartbeat) {
+      if (latestJournal) {
+        const journalAge = Date.now() - latestJournal.createdAt.getTime();
+        if (journalAge > 7200000) {
+          // Journal older than 2h → offline
+          health = 'gray';
+        } else {
+          switch (latestJournal.status) {
+            case 'healthy': health = 'green'; break;
+            case 'blocked': health = 'red'; break;
+            case 'idle': health = 'yellow'; break;
+            case 'error': health = 'yellow'; break;
+            default: health = 'green';
+          }
+        }
+      } else if (agent.lastHeartbeat) {
         const diff = Date.now() - agent.lastHeartbeat.getTime();
         health = diff < 86400000 ? 'green' : 'yellow';
       }
@@ -106,16 +129,16 @@ export async function GET() {
         role: agent.role,
         emoji: emojiMap[agent.id] || '🤖',
         health,
-        status: lastReport?.focus || agent.status,
+        status: latestJournal?.did || lastReport?.focus || agent.status,
         mrr: agentStats?.mrr ?? mrrMetric?.value ?? 0,
         users: agentStats?.users ?? usersMetric?.value ?? 0,
         traffic: agentStats?.traffic ?? 0,
         cost: agentStats?.cost ?? 0,
         checklist_progress: 0,
         last_report: lastReport?.focus || '',
-        blocker: lastReport?.blockers || null,
-        last_updated: agent.lastHeartbeat ? agent.lastHeartbeat.toISOString() : null,
-        has_stats: !!agent.lastHeartbeat || agent.metrics.length > 0 || !!lastReport || !!agentStats,
+        blocker: latestJournal?.blockers || lastReport?.blockers || null,
+        last_updated: latestJournal?.createdAt?.toISOString() || agent.lastHeartbeat?.toISOString() || null,
+        has_stats: !!latestJournal || !!agent.lastHeartbeat || agent.metrics.length > 0 || !!lastReport || !!agentStats,
       };
     });
 

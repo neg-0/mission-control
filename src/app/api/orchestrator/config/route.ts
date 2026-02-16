@@ -125,6 +125,8 @@ export async function PATCH(request: NextRequest) {
     if (body.tickIntervalMs !== undefined) data.tickIntervalMs = body.tickIntervalMs;
     if (body.tpmLimit !== undefined) data.tpmLimit = body.tpmLimit;
     if (body.quotaResetHours !== undefined) data.quotaResetHours = body.quotaResetHours;
+    if (body.journalEntries !== undefined) data.journalEntries = body.journalEntries;
+    if (body.mdInjections !== undefined) data.mdInjections = body.mdInjections;
     if (body.enabled !== undefined) data.enabled = body.enabled;
 
     const config = await prisma.orchestratorConfig.upsert({
@@ -137,6 +139,8 @@ export async function PATCH(request: NextRequest) {
         ...(body.tickIntervalMs !== undefined && { tickIntervalMs: body.tickIntervalMs }),
         ...(body.tpmLimit !== undefined && { tpmLimit: body.tpmLimit }),
         ...(body.quotaResetHours !== undefined && { quotaResetHours: body.quotaResetHours }),
+        ...(body.journalEntries !== undefined && { journalEntries: body.journalEntries }),
+        ...(body.mdInjections !== undefined && { mdInjections: body.mdInjections }),
         ...(body.enabled !== undefined && { enabled: body.enabled }),
       },
       update: data,

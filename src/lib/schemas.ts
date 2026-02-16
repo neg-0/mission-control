@@ -137,6 +137,10 @@ export const UpdateOrchestratorConfigSchema = z
     tpmLimit: z.number().int().nullable().optional(),
     /** Hours between quota resets (≥0.5). Default: 1 */
     quotaResetHours: z.number().min(0.5).optional(),
+    /** How many recent journal entries to include in each heartbeat context (0–20). Default: 5 */
+    journalEntries: z.number().int().min(0).max(20).optional(),
+    /** Array of markdown file paths to inject into heartbeat context */
+    mdInjections: z.array(z.string()).optional(),
     /** Enable/disable the orchestrator globally */
     enabled: z.boolean().optional(),
   })

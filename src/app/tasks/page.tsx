@@ -1,3 +1,6 @@
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 import TaskBoard from '@/components/TaskBoard';
 
 export default function TasksPage() {

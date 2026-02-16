@@ -33,9 +33,9 @@ const healthDot: Record<string, string> = {
 
 const healthLabel: Record<string, string> = {
   green: 'Healthy',
-  yellow: 'Stale',
-  red: 'Offline',
-  gray: 'No Signal',
+  yellow: 'Idle',
+  red: 'Blocked',
+  gray: 'Offline',
 };
 
 function formatCurrency(val: number): string {
@@ -101,7 +101,7 @@ export function FleetCards({ agents, onSelectAgent, onWakeAgent }: FleetCardsPro
           {!agent.has_stats && (
             <div className="flex items-center gap-2 text-xs text-yellow-400/80 bg-yellow-500/10 rounded px-2 py-1.5 border border-yellow-500/20">
               <span>⚠️</span>
-              <span>Agent needs to report (Run <code>roster_checkin</code>)</span>
+              <span>Agent needs to report via <code>/api/journal</code></span>
             </div>
           )}
 
