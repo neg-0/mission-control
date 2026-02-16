@@ -758,9 +758,38 @@ function RebuildControl() {
 // ---------------------------------------------------------------------------
 
 function RailwayIntegration() {
+  const [status, setStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
+
+  useEffect(() => {
+    // Check URL params for fresh connection result
+    const params = new URLSearchParams(window.location.search);
+    const railwayParam = params.get('railway');
+    if (railwayParam === 'connected') {
+      setStatus('connected');
+      params.delete('railway');
+      const clean = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (clean ? `?${clean}` : ''));
+      return;
+    }
+    if (railwayParam === 'error') {
+      setStatus('disconnected');
+      return;
+    }
+
+    // Check server-side token presence
+    fetch('/api/auth/railway/status')
+      .then(res => res.json())
+      .then(data => {
+        setStatus(data.connected ? 'connected' : 'disconnected');
+      })
+      .catch(() => setStatus('disconnected'));
+  }, []);
+
   const handleConnect = () => {
     window.location.href = '/api/auth/railway/login';
   };
+
+  const isConnected = status === 'connected';
 
   return (
     <div className="rounded-lg border border-purple-500/20 bg-gradient-to-br from-purple-950/30 to-zinc-900/50 p-5">
@@ -780,13 +809,16 @@ function RailwayIntegration() {
           onClick={handleConnect}
           className="px-4 py-2 text-xs font-medium rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 active:scale-95"
         >
-          Connect Railway
+          {isConnected ? 'Reconnect' : 'Connect Railway'}
         </button>
       </div>
       <div className="mt-4 text-xs text-zinc-500 bg-zinc-900/40 px-3 py-2.5 rounded-md border border-zinc-800/50">
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-zinc-600"></div>
-          <span>Not connected</span>
+          <div className={cn(
+            'w-1.5 h-1.5 rounded-full',
+            isConnected ? 'bg-emerald-500' : 'bg-zinc-600'
+          )}></div>
+          <span>{isConnected ? 'Connected' : status === 'checking' ? 'Checking…' : 'Not connected'}</span>
         </div>
       </div>
     </div>
