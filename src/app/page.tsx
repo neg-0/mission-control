@@ -22,6 +22,7 @@ import { DocPreviewButton } from '../components/DocPreviewButton';
 import { FileBrowser } from '../components/FileBrowser';
 import GatewayOfflineBanner from '../components/GatewayOfflineBanner';
 import { GoalsPanel } from '../components/GoalsPanel';
+import { LatestJournalEntries } from '../components/LatestJournalEntries';
 import { ScheduleManager } from '../components/ScheduleManager';
 import { SettingsPage } from '../components/SettingsPage';
 
@@ -1078,12 +1079,9 @@ function MissionControlInner() {
                                     </div>
                                   </div>
                                 </div>
-                                {/* Mission info */}
-                                {selectedAgent.last_report && (
-                                  <div className="glass-card p-4">
-                                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Last Report</h3>
-                                    <p className="text-sm font-mono text-foreground/80">{selectedAgent.last_report}</p>
-                                  </div>
+                                {/* Latest Journal Entries */}
+                                {selectedAgentId && (
+                                  <LatestJournalEntries agentId={selectedAgentId} />
                                 )}
                                 {/* Sub-agents / processes for this agent */}
                                 <SubAgentsPanel agentId={selectedAgentId || undefined} />
