@@ -74,7 +74,7 @@ export async function getAgentWorkspaces(): Promise<string[]> {
 // ---------------------------------------------------------------------------
 
 /**
- * Write RAILWAY_TOKEN=<token> into every agent workspace's .env file.
+ * Write RAILWAY_API_TOKEN=<token> into every agent workspace's .env file.
  * Logs successes and failures but does not throw on individual failures
  * so one broken workspace doesn't block the rest.
  */
@@ -88,7 +88,7 @@ export async function distributeTokenToAgents(
   for (const ws of workspaces) {
     const envPath = path.join(ws, '.env');
     try {
-      await updateEnvVar(envPath, 'RAILWAY_TOKEN', token);
+      await updateEnvVar(envPath, 'RAILWAY_API_TOKEN', token);
       updated.push(ws);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -107,8 +107,8 @@ export async function persistMCTokens(
   accessToken: string,
   refreshToken?: string,
 ): Promise<void> {
-  await updateEnvVar(MC_ENV_PATH, 'RAILWAY_TOKEN', accessToken);
-  process.env.RAILWAY_TOKEN = accessToken;
+  await updateEnvVar(MC_ENV_PATH, 'RAILWAY_API_TOKEN', accessToken);
+  process.env.RAILWAY_API_TOKEN = accessToken;
 
   if (refreshToken) {
     await updateEnvVar(MC_ENV_PATH, 'RAILWAY_REFRESH_TOKEN', refreshToken);

@@ -25,14 +25,14 @@ describe('updateEnvVar', () => {
 
   test('replaces existing key in-place', async () => {
     mockedReadFile.mockResolvedValue(
-      'FOO=bar\nRAILWAY_TOKEN=old_token\nOTHER=value\n'
+      'FOO=bar\nRAILWAY_API_TOKEN=old_token\nOTHER=value\n'
     );
 
-    await updateEnvVar('/test/.env', 'RAILWAY_TOKEN', 'new_token');
+    await updateEnvVar('/test/.env', 'RAILWAY_API_TOKEN', 'new_token');
 
     expect(mockedWriteFile).toHaveBeenCalledWith(
       '/test/.env',
-      'FOO=bar\nRAILWAY_TOKEN=new_token\nOTHER=value\n',
+      'FOO=bar\nRAILWAY_API_TOKEN=new_token\nOTHER=value\n',
       'utf-8'
     );
   });
@@ -40,11 +40,11 @@ describe('updateEnvVar', () => {
   test('appends key when it does not exist', async () => {
     mockedReadFile.mockResolvedValue('FOO=bar\nOTHER=value\n');
 
-    await updateEnvVar('/test/.env', 'RAILWAY_TOKEN', 'new_token');
+    await updateEnvVar('/test/.env', 'RAILWAY_API_TOKEN', 'new_token');
 
     expect(mockedWriteFile).toHaveBeenCalledWith(
       '/test/.env',
-      'FOO=bar\nOTHER=value\nRAILWAY_TOKEN=new_token\n',
+      'FOO=bar\nOTHER=value\nRAILWAY_API_TOKEN=new_token\n',
       'utf-8'
     );
   });
@@ -52,11 +52,11 @@ describe('updateEnvVar', () => {
   test('handles empty file', async () => {
     mockedReadFile.mockResolvedValue('');
 
-    await updateEnvVar('/test/.env', 'RAILWAY_TOKEN', 'new_token');
+    await updateEnvVar('/test/.env', 'RAILWAY_API_TOKEN', 'new_token');
 
     expect(mockedWriteFile).toHaveBeenCalledWith(
       '/test/.env',
-      'RAILWAY_TOKEN=new_token\n',
+      'RAILWAY_API_TOKEN=new_token\n',
       'utf-8'
     );
   });
@@ -64,11 +64,11 @@ describe('updateEnvVar', () => {
   test('creates file when it does not exist', async () => {
     mockedReadFile.mockRejectedValue(new Error('ENOENT'));
 
-    await updateEnvVar('/test/.env', 'RAILWAY_TOKEN', 'new_token');
+    await updateEnvVar('/test/.env', 'RAILWAY_API_TOKEN', 'new_token');
 
     expect(mockedWriteFile).toHaveBeenCalledWith(
       '/test/.env',
-      'RAILWAY_TOKEN=new_token\n',
+      'RAILWAY_API_TOKEN=new_token\n',
       'utf-8'
     );
   });
@@ -87,14 +87,14 @@ describe('updateEnvVar', () => {
 
   test('replaces only the matching key (not partial matches)', async () => {
     mockedReadFile.mockResolvedValue(
-      'RAILWAY_TOKEN=old\nRAILWAY_TOKEN_EXTRA=should_stay\n'
+      'RAILWAY_API_TOKEN=old\nRAILWAY_API_TOKEN_EXTRA=should_stay\n'
     );
 
-    await updateEnvVar('/test/.env', 'RAILWAY_TOKEN', 'new');
+    await updateEnvVar('/test/.env', 'RAILWAY_API_TOKEN', 'new');
 
     expect(mockedWriteFile).toHaveBeenCalledWith(
       '/test/.env',
-      'RAILWAY_TOKEN=new\nRAILWAY_TOKEN_EXTRA=should_stay\n',
+      'RAILWAY_API_TOKEN=new\nRAILWAY_API_TOKEN_EXTRA=should_stay\n',
       'utf-8'
     );
   });
@@ -169,7 +169,7 @@ describe('distributeTokenToAgents', () => {
           ]
         }
       }))
-      .mockResolvedValue('RAILWAY_TOKEN=old_token\n');
+      .mockResolvedValue('RAILWAY_API_TOKEN=old_token\n');
 
     const result = await distributeTokenToAgents('new_token');
 
@@ -190,8 +190,8 @@ describe('distributeTokenToAgents', () => {
           ]
         }
       }))
-      .mockResolvedValueOnce('RAILWAY_TOKEN=old\n') // rocket .env read
-      .mockResolvedValueOnce('RAILWAY_TOKEN=old\n'); // broken .env read
+      .mockResolvedValueOnce('RAILWAY_API_TOKEN=old\n') // rocket .env read
+      .mockResolvedValueOnce('RAILWAY_API_TOKEN=old\n'); // broken .env read
 
     mockedWriteFile
       .mockResolvedValueOnce(undefined) // rocket write succeeds
