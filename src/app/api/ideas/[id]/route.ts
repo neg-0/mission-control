@@ -39,7 +39,7 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    
+
     // Special Logic: Start Validation Sprint
     if (body.action === 'start_sprint') {
       const now = new Date();
@@ -83,10 +83,30 @@ export async function PATCH(
       return NextResponse.json({ ideaId: idea.id, projectId: project.id });
     }
 
-    // Standard Update
+    // Special Logic: Kill
+    if (body.action === 'kill') {
+      const updated = await prisma.idea.update({
+        where: { id: params.id },
+        data: { status: 'killed' }
+      });
+      return NextResponse.json(updated);
+    }
+
+    // Standard Update — only pass known fields
+    const allowedFields = ['status', 'stage', 'title', 'description', 'source', 'sourceUrls',
+      'score', 'researchNotes', 'refineryData', 'validationMetrics',
+      'validationTarget', 'validationStartedAt', 'validationDeadline'] as const;
+
+    const data: Record<string, unknown> = {};
+    for (const key of allowedFields) {
+      if (body[key] !== undefined) {
+        data[key] = body[key];
+      }
+    }
+
     const updated = await prisma.idea.update({
       where: { id: params.id },
-      data: body
+      data
     });
 
     return NextResponse.json(updated);

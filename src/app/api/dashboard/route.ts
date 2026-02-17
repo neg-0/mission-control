@@ -174,6 +174,8 @@ export async function GET() {
         validationMetrics: idea.validationMetrics ?? null,
         timeRemaining,
         isExpired,
+        scorecards: idea.scorecards.map(sc => ({ category: sc.category, score: sc.score })),
+        sourceUrls: (idea as Record<string, unknown>).sourceUrls ?? [],
       };
     });
 

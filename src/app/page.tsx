@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Flame,
   ListTodo,
-  Menu,
   Search,
   Settings,
   X,
@@ -54,7 +53,7 @@ interface Workspace {
 interface DashboardData {
   updated_at: string;
   global: { mrr_total: number; burn_rate_est: number; active_agents: number; active_projects: number; total_users: number; total_fleet: number };
-  pipeline: Array<{ id: string; name: string; bluf: string; score: number; status: string; nextStep?: string; url: string | null }>;
+  pipeline: Array<{ id: string; name: string; bluf: string; score: number; status: string; stage?: string; nextStep?: string; url: string | null; validationDeadline?: string | null; validationTarget?: number | null; validationMetrics?: { signups?: number; traffic?: number; conversion?: string } | null; timeRemaining?: number | null; isExpired?: boolean; scorecards?: Array<{ category: string; score: number }>; sourceUrls?: string[] }>;
   fleet: Array<{ id: string; name: string; emoji: string; health: 'green' | 'yellow' | 'red' | 'gray'; status: string; last_report: string; mrr: number; users: number; traffic: number; cost: number; checklist_progress: number; last_updated: string | null; has_stats: boolean }>;
   goals: Array<{ id: string; name: string; status: string; owner: string }>;
   milestones: Array<{ label: string; mrr: number; status: string }>;
@@ -289,7 +288,7 @@ function SettingsModal({ onClose, connected, connecting }: {
 
 function MissionControlInner() {
   const searchParams = useSearchParams();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'warroom' | 'ideas' | 'projects' | 'agents' | 'tasks' | 'infra' | 'settings'>(
     (searchParams.get('tab') as 'warroom' | 'ideas' | 'projects' | 'agents' | 'tasks' | 'infra' | 'settings') || 'warroom'
   );
@@ -346,8 +345,9 @@ function MissionControlInner() {
   const [agentSearchQuery, setAgentSearchQuery] = useState('');
 
   // My Tasks (for War Room)
-  interface MyTask { id: string; title: string; status: string; priority: string; goal?: { id: string; title: string } | null; project?: { id: string; name: string } | null }
+  interface MyTask { id: string; title: string; status: string; priority: string; description?: string | null; assigneeId?: string | null; assigneeType?: string | null; createdAt?: string | null; goal?: { id: string; title: string } | null; project?: { id: string; name: string } | null }
   const [myTasks, setMyTasks] = useState<MyTask[]>([]);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   // URL sync helper
   function syncUrl(overrides: { tab?: string; agent?: string | null; detail?: string | null; file?: string | null; q?: string | null } = {}) {
@@ -666,22 +666,6 @@ function MissionControlInner() {
           </h1>
 
           <div className="flex-1 flex items-center justify-end gap-3">
-            <div className="hidden md:flex items-center gap-2">
-              <div className={cn(
-                'w-2 h-2 led',
-                gatewayHealth.online ? 'led-green' : gatewayHealth.loading ? 'led-yellow led-pulse' : 'led-gray'
-              )} />
-              <span className="text-sm text-muted-foreground">
-                {gatewayHealth.online ? 'Live' : gatewayHealth.loading ? 'Checking...' : 'Offline'}
-              </span>
-            </div>
-
-            <button
-              className="md:hidden p-2 hover:bg-accent rounded-lg"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
           </div>
         </div>
       </header>
@@ -751,7 +735,7 @@ function MissionControlInner() {
               </div>
             )}
 
-            <div className="flex gap-1 mb-4 border-b border-border/50 pb-px">
+            <div className="flex gap-1 mb-4 border-b border-border/50 pb-px overflow-x-auto scrollbar-hide">
               {(['warroom', 'ideas', 'projects', 'agents', 'tasks', 'infra', 'settings'] as const).map((tab) => {
                 const labels = {
                   warroom: '🎯 War Room',
@@ -767,7 +751,7 @@ function MissionControlInner() {
                     key={tab}
                     onClick={() => { setActiveTab(tab); syncUrl({ tab, agent: tab === 'agents' ? selectedAgentId : null, detail: tab === 'agents' && selectedAgentId ? agentDetailTab : null }); }}
                     className={cn(
-                      'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+                      'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap shrink-0',
                       activeTab === tab
                         ? 'bg-accent text-foreground border-b-2 border-primary'
                         : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
@@ -840,22 +824,59 @@ function MissionControlInner() {
                       <div className="text-sm text-muted-foreground italic py-2">No tasks assigned to you</div>
                     ) : (
                       <div className="space-y-1.5">
-                        {myTasks.map(t => (
-                          <div key={t.id} className={cn(
-                            'flex items-center gap-2 px-2 py-1.5 rounded text-sm',
-                            t.status === 'blocked' ? 'bg-red-500/10 border border-red-500/20' : 'bg-card/40',
-                          )}>
-                            <span className={cn(
-                              'text-[10px] font-mono px-1.5 py-0.5 rounded',
-                              t.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
-                                t.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
-                                  'bg-zinc-500/20 text-zinc-400'
-                            )}>{t.priority}</span>
-                            <span className="flex-1 truncate">{t.title}</span>
-                            {t.status === 'blocked' && <span className="text-[10px] text-red-400 font-medium">BLOCKED</span>}
-                            {t.goal && <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">{t.goal.title}</span>}
-                          </div>
-                        ))}
+                        {myTasks.map(t => {
+                          const isExpanded = expandedTaskId === t.id;
+                          const age = t.createdAt ? formatRelativeTime(new Date(t.createdAt).getTime()) : null;
+                          return (
+                            <div key={t.id}>
+                              <button
+                                onClick={() => setExpandedTaskId(isExpanded ? null : t.id)}
+                                className={cn(
+                                  'w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left transition-colors',
+                                  t.status === 'blocked' ? 'bg-red-500/10 border border-red-500/20' : 'bg-card/40 hover:bg-card/60',
+                                )}
+                              >
+                                <span className={cn(
+                                  'text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0',
+                                  t.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
+                                    t.priority === 'high' ? 'bg-orange-500/20 text-orange-400' :
+                                      'bg-zinc-500/20 text-zinc-400'
+                                )}>{t.priority}</span>
+                                <span className={cn('flex-1', !isExpanded && 'truncate')}>{t.title}</span>
+                                {t.status === 'blocked' && <span className="text-[10px] text-red-400 font-medium shrink-0">BLOCKED</span>}
+                                <span className={cn('text-[10px] text-muted-foreground shrink-0 transition-transform', isExpanded && 'rotate-180')}>▼</span>
+                              </button>
+                              {isExpanded && (
+                                <div className="mt-1 ml-2 px-3 py-2 rounded bg-card/30 border border-border/30 space-y-1.5 text-xs text-muted-foreground animate-in slide-in-from-top-1">
+                                  {t.assigneeId && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-foreground/60 font-medium">Agent:</span>
+                                      <span className="text-foreground/90">{t.assigneeId}</span>
+                                      {t.assigneeType && <span className="text-[10px] bg-accent/50 px-1 rounded">{t.assigneeType}</span>}
+                                    </div>
+                                  )}
+                                  {t.description && (
+                                    <div className="text-foreground/80 leading-relaxed">{t.description}</div>
+                                  )}
+                                  <div className="flex flex-wrap gap-3">
+                                    <div><span className="font-medium text-foreground/60">Status:</span> <span className={cn(
+                                      t.status === 'blocked' ? 'text-red-400' :
+                                        t.status === 'done' ? 'text-emerald-400' :
+                                          t.status === 'in_progress' ? 'text-sky-400' : 'text-foreground/80'
+                                    )}>{t.status}</span></div>
+                                    <div><span className="font-medium text-foreground/60">Priority:</span> <span className={cn(
+                                      t.priority === 'critical' ? 'text-red-400' :
+                                        t.priority === 'high' ? 'text-orange-400' : 'text-foreground/80'
+                                    )}>{t.priority}</span></div>
+                                    {age && <div><span className="font-medium text-foreground/60">Age:</span> {age}</div>}
+                                  </div>
+                                  {t.goal && <div><span className="font-medium text-foreground/60">Goal:</span> {t.goal.title}</div>}
+                                  {t.project && <div><span className="font-medium text-foreground/60">Project:</span> {t.project.name}</div>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1168,22 +1189,44 @@ function MissionControlInner() {
 
       <footer className="fixed bottom-0 left-0 right-0 glass-card rounded-none border-x-0 border-b-0 px-4 py-2">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-4">
-            <span className={cn(
-              gatewayHealth.online ? 'text-green-400' : 'text-gray-400'
-            )}>
-              {gatewayHealth.online ? '🟢' : '⚪'} Gateway: {gatewayHealth.online ? 'Connected' : 'Disconnected'}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Overall status LED */}
+            {(() => {
+              const gwOk = gatewayHealth.online;
+              const wsOk = connected;
+              const orchOk = gatewayHealth.status === 'running';
+              const overallColor = !gwOk ? 'led-red' : (!wsOk || !orchOk) ? 'led-yellow' : 'led-green';
+              return <div className={cn('w-2 h-2 led led-pulse shrink-0', overallColor)} />;
+            })()}
+            <span className={cn(gatewayHealth.online ? 'text-emerald-400' : 'text-red-400')}>
+              GW: {gatewayHealth.online ? 'OK' : 'Down'}
             </span>
+            <span className="text-border">│</span>
+            <span className={cn(connected ? 'text-emerald-400' : connecting ? 'text-yellow-400' : 'text-red-400')}>
+              WS: {connected ? 'Connected' : connecting ? 'Connecting' : 'Disconnected'}
+            </span>
+            <span className="text-border">│</span>
+            <span className={cn(
+              gatewayHealth.status === 'running' ? 'text-emerald-400' :
+                gatewayHealth.status === 'restarting' ? 'text-yellow-400' : 'text-red-400'
+            )}>
+              Orch: {gatewayHealth.status === 'running' ? 'Running' : gatewayHealth.status === 'unknown' ? '—' : gatewayHealth.status}
+            </span>
+            <span className="text-border hidden sm:inline">│</span>
+            <span className="hidden sm:inline">Sync: {lastSyncLabel}</span>
             {dashboardData?.cron && (
-              <CronHealth
-                total={dashboardData.cron.total}
-                ok={dashboardData.cron.ok}
-                errors={dashboardData.cron.errors}
-              />
+              <>
+                <span className="text-border hidden md:inline">│</span>
+                <span className="hidden md:inline"><CronHealth
+                  total={dashboardData.cron.total}
+                  ok={dashboardData.cron.ok}
+                  errors={dashboardData.cron.errors}
+                /></span>
+              </>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            <span>Last sync: {lastSyncLabel}</span>
+          <div className="flex items-center gap-3 sm:hidden">
+            <span>Sync: {lastSyncLabel}</span>
           </div>
         </div>
       </footer>

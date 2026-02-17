@@ -40,7 +40,8 @@ model Idea {
   title       String
   description String?  // High-level pitch
   source      String?  // "BigIdeasDB", "Reddit"
-  status      String   @default("draft") // "draft", "refining", "validating", "validated", "review_failed", "graduated", "killed"
+  sourceUrls  String[] // Links to pain point sources (Reddit threads, HN posts, etc.)
+  status      String   @default("draft") // "draft", "refining", "building_lp", "validating", "validated", "review_failed", "graduated", "killed"
   
   // Refinery State
   stage       String   @default("pain_audit") // "pain_audit", "copy_draft", "outreach"

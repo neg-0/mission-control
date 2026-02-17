@@ -1,9 +1,14 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
+
+interface ScorecardItem {
+  category: string;
+  score: number;
+}
 
 interface IdeaItem {
   id: string;
@@ -17,6 +22,7 @@ interface IdeaItem {
   validationMetrics?: { signups?: number; traffic?: number; conversion?: string } | null;
   timeRemaining?: number | null;
   isExpired?: boolean;
+  scorecards?: ScorecardItem[];
 }
 
 interface IdeasKanbanProps {
@@ -29,12 +35,21 @@ interface IdeasKanbanProps {
 const COLUMNS = [
   { key: 'draft', label: '💡 New', statuses: ['draft', 'new'] },
   { key: 'refining', label: '🔬 Refining', statuses: ['refining', 'researching'] },
+  { key: 'building_lp', label: '🏗️ Building LP', statuses: ['building_lp'] },
   { key: 'validating', label: '⚔️ The Arena', statuses: ['validating'] },
   { key: 'graduated', label: '✅ Validated', statuses: ['graduated', 'validated'] },
   { key: 'killed', label: '💀 Graveyard', statuses: ['killed', 'rejected', 'review_failed'] },
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
+
+const scoreLabels: Record<string, string> = {
+  problem_pain_level: '😫 Pain',
+  market_demand: '📈 Demand',
+  technical_feasibility: '⚙️ Tech',
+  competition_gap: '🏆 Gap',
+  b2b_value: '💰 B2B',
+};
 
 function scoreColor(score: number): string {
   if (score >= 80) return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
@@ -59,6 +74,72 @@ function formatCountdown(ms: number): string {
   const minutes = totalMinutes % 60;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+function truncateId(id: string): string {
+  return id.split('-')[0] || id.slice(0, 8);
+}
+
+// ─── Copy-to-Clipboard UUID ────────────────────────────────────────────────────
+
+function CopyableId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<NodeJS.Timeout | null>(null);
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(id).catch(() => { });
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1200);
+  }
+
+  return (
+    <span
+      onClick={handleCopy}
+      className="text-[10px] font-mono text-muted-foreground hover:text-primary cursor-pointer transition-colors"
+      title={`Click to copy: ${id}`}
+    >
+      {copied ? '✓ Copied' : truncateId(id)}
+    </span>
+  );
+}
+
+// ─── Score Tooltip ──────────────────────────────────────────────────────────────
+
+function ScoreBadge({ score, scorecards }: { score: number; scorecards?: ScorecardItem[] }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div className="relative" onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}>
+      <span className={cn('text-[10px] font-mono px-1.5 py-0.5 rounded border cursor-default', scoreColor(score))}>
+        {score || '—'}
+      </span>
+
+      {showTooltip && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-44 p-2 rounded-lg bg-[#0c111e] border border-border/50 shadow-xl space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+            Score Breakdown
+          </div>
+          {scorecards && scorecards.length > 0 ? (
+            scorecards.map(sc => (
+              <div key={sc.category} className="flex items-center justify-between text-[10px]">
+                <span className="text-muted-foreground">{scoreLabels[sc.category] || sc.category}</span>
+                <span className={cn(
+                  'font-mono font-semibold',
+                  sc.score >= 8 ? 'text-emerald-400' : sc.score >= 6 ? 'text-yellow-400' : 'text-red-400'
+                )}>
+                  {sc.score}/10
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="text-[10px] text-muted-foreground italic">Not yet scored</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Countdown Hook ─────────────────────────────────────────────────────────────
@@ -101,10 +182,8 @@ function ArenaCard({ item, onClick }: { item: IdeaItem; onClick?: () => void }) 
       onClick={onClick}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono text-muted-foreground">{item.id}</span>
-        <span className={cn('text-[10px] font-mono px-1.5 py-0.5 rounded border', scoreColor(item.score))}>
-          {item.score}
-        </span>
+        <CopyableId id={item.id} />
+        <ScoreBadge score={item.score} scorecards={item.scorecards} />
       </div>
       <div className="text-sm font-medium">{item.name}</div>
 
@@ -165,10 +244,8 @@ function IdeaCard({
       onClick={onClick}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-mono text-muted-foreground">{item.id}</span>
-        <span className={cn('text-[10px] font-mono px-1.5 py-0.5 rounded border', scoreColor(item.score))}>
-          {item.score}
-        </span>
+        <CopyableId id={item.id} />
+        <ScoreBadge score={item.score} scorecards={item.scorecards} />
       </div>
       <div className="text-sm font-medium">{item.name}</div>
       {item.bluf && (
@@ -194,7 +271,7 @@ export function IdeasKanban({ items, onCardClick }: IdeasKanbanProps) {
       {columns.map(col => (
         <div
           key={col.key}
-          className="flex-shrink-0 w-[240px] min-w-[240px] glass-card p-3 space-y-2"
+          className="flex-shrink-0 w-[220px] min-w-[220px] glass-card p-3 space-y-2"
         >
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
