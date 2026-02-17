@@ -121,6 +121,10 @@ model Project {
   // Infrastructure Constraints
   dbProvider      String?  // "supabase", "railway", "none"
   dbActive        Boolean  @default(false) // Tracks active slot usage
+
+  // Railway Integration (for automated project token generation)
+  railwayProjectId     String?  // Railway project UUID
+  railwayEnvironmentId String?  // Railway environment UUID (usually "production")
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

@@ -759,13 +759,19 @@ function RebuildControl() {
 
 function RailwayIntegration() {
   const [status, setStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking');
+  const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const [tokenAge, setTokenAge] = useState<number | null>(null);
+  const [healthy, setHealthy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<string | null>(null);
 
-  useEffect(() => {
+  const checkStatus = useCallback(() => {
     // Check URL params for fresh connection result
     const params = new URLSearchParams(window.location.search);
     const railwayParam = params.get('railway');
     if (railwayParam === 'connected') {
       setStatus('connected');
+      setHealthy(true);
       params.delete('railway');
       const clean = params.toString();
       window.history.replaceState({}, '', window.location.pathname + (clean ? `?${clean}` : ''));
@@ -781,12 +787,42 @@ function RailwayIntegration() {
       .then(res => res.json())
       .then(data => {
         setStatus(data.connected ? 'connected' : 'disconnected');
+        setLastRefresh(data.lastRefreshAt);
+        setTokenAge(data.tokenAgeMinutes);
+        setHealthy(data.healthy ?? false);
       })
       .catch(() => setStatus('disconnected'));
   }, []);
 
+  useEffect(() => {
+    checkStatus();
+    const timer = setInterval(checkStatus, 30_000);
+    return () => clearInterval(timer);
+  }, [checkStatus]);
+
   const handleConnect = () => {
     window.location.href = '/api/auth/railway/login';
+  };
+
+  const handleRefreshNow = async () => {
+    setRefreshing(true);
+    setRefreshResult(null);
+    try {
+      const res = await fetch('/api/cron/refresh-tokens');
+      const data = await res.json();
+      if (data.status === 'ok') {
+        setRefreshResult(`✓ Refreshed — ${data.accountToken?.distributed ?? 0} workspaces, ${data.projectTokens?.generated ?? 0} project tokens`);
+        setHealthy(true);
+        setLastRefresh(data.refreshedAt);
+        setTokenAge(0);
+      } else {
+        setRefreshResult(`✗ ${data.message || data.error || 'Failed'}`);
+      }
+    } catch {
+      setRefreshResult('✗ Failed to reach refresh endpoint');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const isConnected = status === 'connected';
@@ -805,21 +841,63 @@ function RailwayIntegration() {
             <p className="text-xs text-zinc-500">Automated deployments & infrastructure</p>
           </div>
         </div>
-        <button
-          onClick={handleConnect}
-          className="px-4 py-2 text-xs font-medium rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 active:scale-95"
-        >
-          {isConnected ? 'Reconnect' : 'Connect Railway'}
-        </button>
+        <div className="flex items-center gap-2">
+          {isConnected && (
+            <button
+              onClick={handleRefreshNow}
+              disabled={refreshing}
+              className="px-3 py-2 text-xs font-medium rounded-lg border border-purple-500/30 text-purple-400 hover:bg-purple-500/10 transition-all duration-200 active:scale-95 disabled:opacity-50"
+            >
+              {refreshing ? '⟳ Refreshing…' : '⟳ Refresh Now'}
+            </button>
+          )}
+          <button
+            onClick={handleConnect}
+            className="px-4 py-2 text-xs font-medium rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 active:scale-95"
+          >
+            {isConnected ? 'Reconnect' : 'Connect Railway'}
+          </button>
+        </div>
       </div>
-      <div className="mt-4 text-xs text-zinc-500 bg-zinc-900/40 px-3 py-2.5 rounded-md border border-zinc-800/50">
+
+      {/* Status row */}
+      <div className="mt-4 text-xs text-zinc-500 bg-zinc-900/40 px-3 py-2.5 rounded-md border border-zinc-800/50 space-y-1.5">
         <div className="flex items-center gap-2">
           <div className={cn(
             'w-1.5 h-1.5 rounded-full',
-            isConnected ? 'bg-emerald-500' : 'bg-zinc-600'
+            isConnected && healthy ? 'bg-emerald-500' :
+              isConnected && !healthy ? 'bg-amber-500 animate-pulse' :
+                'bg-zinc-600'
           )}></div>
-          <span>{isConnected ? 'Connected' : status === 'checking' ? 'Checking…' : 'Not connected'}</span>
+          <span>
+            {isConnected && healthy ? 'Connected & healthy' :
+              isConnected && !healthy ? 'Connected — token may be stale' :
+                status === 'checking' ? 'Checking…' : 'Not connected'}
+          </span>
         </div>
+        {lastRefresh && (
+          <div className="flex items-center gap-2 text-[10px] text-zinc-600">
+            <span>Last refresh: {new Date(lastRefresh).toLocaleString()}</span>
+            {tokenAge !== null && (
+              <span className={cn(
+                'px-1.5 py-0.5 rounded',
+                tokenAge < 50 ? 'bg-emerald-500/10 text-emerald-400' :
+                  tokenAge < 65 ? 'bg-amber-500/10 text-amber-400' :
+                    'bg-red-500/10 text-red-400'
+              )}>
+                {tokenAge}m ago
+              </span>
+            )}
+          </div>
+        )}
+        {refreshResult && (
+          <div className={cn(
+            'text-[10px] mt-1',
+            refreshResult.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'
+          )}>
+            {refreshResult}
+          </div>
+        )}
       </div>
     </div>
   );

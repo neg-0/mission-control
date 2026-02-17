@@ -5,7 +5,7 @@
  */
 
 import { readFile, writeFile } from 'fs/promises';
-import { distributeTokenToAgents, getAgentWorkspaces, updateEnvVar } from '../token-utils';
+import { distributeTokenToAgents, getAgentWorkspaceMap, getAgentWorkspaces, updateEnvVar } from '../token-utils';
 
 // Mock fs/promises
 jest.mock('fs/promises');
@@ -145,6 +145,48 @@ describe('getAgentWorkspaces', () => {
 
     const workspaces = await getAgentWorkspaces();
     expect(workspaces).toEqual([]);
+  });
+});
+
+// =============================================================================
+// getAgentWorkspaceMap
+// =============================================================================
+
+describe('getAgentWorkspaceMap', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('returns id → workspace Map', async () => {
+    mockedReadFile.mockResolvedValue(JSON.stringify({
+      agents: {
+        list: [
+          { id: 'rocket', workspace: '/ws/rocket' },
+          { id: 'captain', workspace: '/ws/captain' },
+        ]
+      }
+    }));
+
+    const map = await getAgentWorkspaceMap();
+    expect(map.size).toBe(2);
+    expect(map.get('rocket')).toBe('/ws/rocket');
+    expect(map.get('captain')).toBe('/ws/captain');
+  });
+
+  test('skips agents without id or workspace', async () => {
+    mockedReadFile.mockResolvedValue(JSON.stringify({
+      agents: {
+        list: [
+          { id: 'rocket', workspace: '/ws/rocket' },
+          { id: 'orphan' }, // no workspace
+          { workspace: '/ws/unknown' }, // no id
+        ]
+      }
+    }));
+
+    const map = await getAgentWorkspaceMap();
+    expect(map.size).toBe(1);
+    expect(map.get('rocket')).toBe('/ws/rocket');
   });
 });
 

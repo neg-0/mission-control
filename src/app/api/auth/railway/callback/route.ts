@@ -1,4 +1,4 @@
-import { distributeTokenToAgents, persistMCTokens } from '@/lib/token-utils';
+import { discoverAndLinkRailwayProjects, distributeProjectTokens, distributeTokenToAgents, persistMCTokens } from '@/lib/token-utils';
 import { NextRequest, NextResponse } from 'next/server';
 
 const TOKEN_ENDPOINT = "https://backboard.railway.com/oauth/token";
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const desc = searchParams.get('error_description') || 'Unknown error';
     // eslint-disable-next-line no-console
     console.error(`[Railway OAuth] Error: ${error} — ${desc}`);
-    const settingsUrl = new URL('/settings?railway=error', BASE_URL());
+    const settingsUrl = new URL('/?tab=settings&railway=error', BASE_URL());
     settingsUrl.searchParams.set('reason', desc);
     return NextResponse.redirect(settingsUrl);
   }
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
       const errorText = await response.text();
       // eslint-disable-next-line no-console
       console.error('[Railway OAuth] Token exchange failed:', errorText);
-      const settingsUrl = new URL('/settings?railway=error', BASE_URL());
+      const settingsUrl = new URL('/?tab=settings&railway=error', BASE_URL());
       settingsUrl.searchParams.set('reason', 'Token exchange failed');
       return NextResponse.redirect(settingsUrl);
     }
@@ -93,8 +93,20 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line no-console
     console.log(`[Railway OAuth] Distributed to ${distribution.updated.length} workspaces`);
 
+    // 3. Auto-discover and link Railway projects to MC projects
+    const discovery = await discoverAndLinkRailwayProjects(data.access_token);
+    // eslint-disable-next-line no-console
+    console.log(`[Railway OAuth] Discovery: ${discovery.linked.length} linked, ${discovery.unmatched.length} unmatched`);
+
+    // 4. Generate project tokens for all linked agents
+    if (discovery.linked.length > 0) {
+      const projectDist = await distributeProjectTokens(data.access_token);
+      // eslint-disable-next-line no-console
+      console.log(`[Railway OAuth] Project tokens: ${projectDist.generated.length} generated`);
+    }
+
     // Redirect back to settings with success, clearing PKCE cookies
-    const settingsUrl = new URL('/settings?railway=connected', BASE_URL());
+    const settingsUrl = new URL('/?tab=settings&railway=connected', BASE_URL());
     const redirectResponse = NextResponse.redirect(settingsUrl);
 
     // Clear the PKCE cookies
@@ -106,7 +118,7 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[Railway OAuth] Error:', err);
-    const settingsUrl = new URL('/settings?railway=error', BASE_URL());
+    const settingsUrl = new URL('/?tab=settings&railway=error', BASE_URL());
     settingsUrl.searchParams.set('reason', 'Internal error during token exchange');
     return NextResponse.redirect(settingsUrl);
   }

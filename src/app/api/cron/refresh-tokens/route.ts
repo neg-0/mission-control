@@ -1,4 +1,4 @@
-import { distributeTokenToAgents, persistMCTokens } from '@/lib/token-utils';
+import { distributeProjectTokens, distributeTokenToAgents, persistMCTokens } from '@/lib/token-utils';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic'; // Prevent static generation
@@ -17,11 +17,16 @@ export async function GET() {
     }
 
     if (!refreshToken || !clientId) {
-      return NextResponse.json({ error: 'Missing refresh token or client ID' }, { status: 500 });
+      // eslint-disable-next-line no-console
+      console.log('[Cron] No refresh token or client ID — skipping refresh');
+      return NextResponse.json({
+        status: 'skipped',
+        message: 'No refresh token or client ID configured. Re-authorize via Settings → Integrations.',
+      });
     }
 
     // eslint-disable-next-line no-console
-    console.log('[Cron] Refreshing Railway token...');
+    console.log(`[Cron] Refreshing Railway token at ${new Date().toISOString()}...`);
 
     const body: Record<string, string> = {
       grant_type: 'refresh_token',
@@ -41,8 +46,20 @@ export async function GET() {
     if (!response.ok) {
       const errorText = await response.text();
       // eslint-disable-next-line no-console
-      console.error('[Cron] Refresh failed:', errorText);
-      return NextResponse.json({ error: 'Refresh failed', details: errorText }, { status: 500 });
+      console.error(`[Cron] Refresh failed at ${new Date().toISOString()}:`, errorText);
+
+      // If the refresh token is invalid/expired, clear it to avoid future noise
+      const parsed = JSON.parse(errorText).error ?? '';
+      if (parsed === 'invalid_grant') {
+        // eslint-disable-next-line no-console
+        console.error('[Cron] Refresh token is stale. Please re-authorize via Settings → Integrations.');
+      }
+
+      return NextResponse.json({
+        error: 'Refresh failed',
+        details: errorText,
+        hint: 'If invalid_grant, re-authorize via Settings → Integrations → Railway → Reconnect',
+      }, { status: 502 });
     }
 
     const data = await response.json();
@@ -50,23 +67,42 @@ export async function GET() {
     const newRefreshToken = data.refresh_token; // Railway rotates refresh tokens
 
     // eslint-disable-next-line no-console
-    console.log('[Cron] Token refreshed. Persisting...');
+    console.log(`[Cron] Token refreshed at ${new Date().toISOString()}. Persisting...`);
 
     // 1. Persist to Mission Control's .env and process.env
     await persistMCTokens(newAccessToken, newRefreshToken);
 
-    // 2. Fan out access token to all agent workspaces
+    // 2. Fan out account access token to all agent workspaces
     const distribution = await distributeTokenToAgents(newAccessToken);
 
+    // 3. Generate and distribute project-scoped tokens
+    let projectDistribution = { generated: [] as string[], failed: [] as string[], skipped: [] as string[] };
+    try {
+      projectDistribution = await distributeProjectTokens(newAccessToken);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[Cron] Project token distribution error (non-fatal):', err);
+    }
+
     // eslint-disable-next-line no-console
-    console.log(`[Cron] Distributed to ${distribution.updated.length} workspaces, ${distribution.failed.length} failed`);
+    console.log(`[Cron] Distributed account token to ${distribution.updated.length} workspaces, ${distribution.failed.length} failed`);
+    // eslint-disable-next-line no-console
+    console.log(`[Cron] Project tokens: ${projectDistribution.generated.length} generated, ${projectDistribution.failed.length} failed, ${projectDistribution.skipped.length} skipped`);
 
     return NextResponse.json({
       status: 'ok',
       message: 'Token refreshed and distributed',
       expires_in: data.expires_in,
-      distributed: distribution.updated.length,
-      failed: distribution.failed.length,
+      accountToken: {
+        distributed: distribution.updated.length,
+        failed: distribution.failed.length,
+      },
+      projectTokens: {
+        generated: projectDistribution.generated.length,
+        failed: projectDistribution.failed.length,
+        skipped: projectDistribution.skipped.length,
+      },
+      refreshedAt: new Date().toISOString(),
     });
 
   } catch (error) {
