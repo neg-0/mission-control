@@ -21,7 +21,7 @@ async function main() {
   
   // 1. Parse AGENTS.md
   console.log('Parsing AGENTS.md...')
-  const agentsPath = path.resolve(process.cwd(), '../../../AGENTS.md')
+  const agentsPath = '/home/neg0/.openclaw/workspace-rocket/AGENTS.md'
   const agentsContent = fs.readFileSync(agentsPath, 'utf-8')
   
   // Regex to match "## 🚀 Rocket (Operator / COO)" and subsequent bullets
