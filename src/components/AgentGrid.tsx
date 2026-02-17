@@ -86,7 +86,7 @@ export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
   }
 
   return (
-    <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-16 gap-1.5">
+    <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 lg:grid-cols-12 xl:grid-cols-14 gap-1.5">
       {agents.map((agent) => {
         const colors = healthColors[agent.health] || healthColors.gray;
         const topGoal = getTopGoal(agent.id);
@@ -111,8 +111,8 @@ export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
                 isHovered && `ring-2 ${colors.ring}`
               )}
             >
-              <span className="text-base md:text-lg leading-none">{agent.emoji}</span>
-              <span className="text-[7px] text-muted-foreground mt-0.5 truncate max-w-full px-0.5 font-medium leading-none">
+              <span className="text-base md:text-lg lg:text-2xl xl:text-3xl leading-none">{agent.emoji}</span>
+              <span className="text-[7px] md:text-[8px] lg:text-[10px] xl:text-xs text-muted-foreground mt-0.5 truncate max-w-full px-0.5 font-medium leading-none">
                 {agent.id}
               </span>
               {/* Health dot */}

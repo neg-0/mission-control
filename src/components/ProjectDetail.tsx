@@ -134,17 +134,17 @@ const phaseColors: Record<string, { ring: string; bg: string; text: string; glow
 
 function PhaseTimeline({ phaseSummary }: { phaseSummary: PhaseSummary[] }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 py-1 px-1">
       {PHASES.map((phase, i) => {
         const summary = phaseSummary.find(s => s.phase === phase.key);
         const status = phaseStatus(summary);
         const colors = phaseColors[phase.color];
 
         return (
-          <div key={phase.key} className="flex items-center">
+          <div key={phase.key} className="flex items-center shrink-0">
             <div
               className={cn(
-                'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap',
                 status === 'complete' && `${colors.bg}/20 ${colors.text} ring-1 ${colors.ring}/30`,
                 status === 'active' && `${colors.bg}/30 ${colors.text} ring-2 ${colors.ring} shadow-md ${colors.glow}`,
                 status === 'pending' && 'bg-card/30 text-muted-foreground/50',
@@ -160,7 +160,7 @@ function PhaseTimeline({ phaseSummary }: { phaseSummary: PhaseSummary[] }) {
             </div>
             {i < PHASES.length - 1 && (
               <div className={cn(
-                'w-6 h-px mx-1',
+                'w-6 h-px mx-1 shrink-0',
                 status === 'complete' ? 'bg-emerald-500/50' : 'bg-border/30',
               )} />
             )}
@@ -495,7 +495,7 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
         </div>
 
         {/* Phase Timeline */}
-        <div className="mt-4 pt-3 border-t border-border/30 overflow-x-auto">
+        <div className="mt-4 pt-3 border-t border-border/30 overflow-x-auto overflow-y-visible scrollbar-hide">
           <PhaseTimeline phaseSummary={project.phaseSummary} />
         </div>
       </div>
