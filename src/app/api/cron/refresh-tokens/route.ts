@@ -1,4 +1,26 @@
-import { distributeProjectTokens, distributeTokenToAgents, persistMCTokens } from '@/lib/token-utils';
+/**
+ * Railway Token Refresh Cron Endpoint
+ *
+ * Called by crontab every hour at :45 (`45 * * * *`).
+ * This is the **sole writer** for Railway OAuth tokens — see critical rules
+ * in `src/lib/token-utils.ts` module JSDoc.
+ *
+ * Flow:
+ *   1. Read refresh token from .env (NOT process.env — see getFreshEnvVar)
+ *   2. POST to Railway's /oauth/token with grant_type=refresh_token
+ *   3. Railway returns: { access_token, refresh_token, expires_in: 3600 }
+ *      - access_token is valid for 1 hour
+ *      - refresh_token may be the same or rotated (Railway docs: "may
+ *        initially contain the same value, but will eventually return
+ *        a new token")
+ *   4. persistMCTokens() writes BOTH tokens to .env AND process.env
+ *   5. Distribute account token to all 12 agent workspace .env files
+ *   6. Generate per-project RAILWAY_TOKEN for each linked Railway project
+ *
+ * ⚠️ DO NOT manually call Railway's /oauth/token outside of this endpoint.
+ *    It will rotate the refresh token and desync our stored value.
+ */
+import { distributeProjectTokens, distributeTokenToAgents, getFreshEnvVar, getFreshRefreshToken, persistMCTokens } from '@/lib/token-utils';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic'; // Prevent static generation
@@ -7,9 +29,12 @@ const TOKEN_ENDPOINT = "https://backboard.railway.com/oauth/token";
 
 export async function GET() {
   try {
-    const refreshToken = process.env.RAILWAY_REFRESH_TOKEN;
-    const clientId = process.env.RAILWAY_CLIENT_ID;
-    const clientSecret = process.env.RAILWAY_CLIENT_SECRET;
+    // Read ALL credentials from .env file, not process.env.
+    // process.env can be stale after restarts or if another process
+    // (e.g. the OAuth callback) updated the .env file.
+    const refreshToken = await getFreshRefreshToken();
+    const clientId = await getFreshEnvVar('RAILWAY_CLIENT_ID');
+    const clientSecret = await getFreshEnvVar('RAILWAY_CLIENT_SECRET');
 
     // During build time, env vars might be missing or refresh might fail.
     if (process.env.NEXT_PHASE === 'phase-production-build') {
@@ -41,6 +66,8 @@ export async function GET() {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(body),
+      // Prevent any Next.js fetch caching
+      cache: 'no-store',
     });
 
     if (!response.ok) {
@@ -67,7 +94,27 @@ export async function GET() {
     const newRefreshToken = data.refresh_token; // Railway rotates refresh tokens
 
     // eslint-disable-next-line no-console
-    console.log(`[Cron] Token refreshed at ${new Date().toISOString()}. Persisting...`);
+    console.log(`[Cron] Token refreshed at ${new Date().toISOString()}. New token: ${newAccessToken?.slice(0, 12)}... Persisting...`);
+
+    // Validate the new token immediately to detect bad responses
+    try {
+      const validateResp = await fetch('https://backboard.railway.com/graphql/v2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${newAccessToken}`,
+        },
+        body: JSON.stringify({ query: '{ me { name } }' }),
+        cache: 'no-store',
+      });
+      const validateData = await validateResp.json();
+      const valid = !!validateData?.data?.me?.name;
+      // eslint-disable-next-line no-console
+      console.log(`[Cron] New token validation: ${valid ? 'VALID' : 'INVALID'} — ${JSON.stringify(validateData).slice(0, 100)}`);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[Cron] New token validation failed:', err);
+    }
 
     // 1. Persist to Mission Control's .env and process.env
     await persistMCTokens(newAccessToken, newRefreshToken);

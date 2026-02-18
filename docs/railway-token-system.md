@@ -2,43 +2,163 @@
 
 Mission Control manages Railway authentication for the entire AI Army fleet. Agents never need to authenticate with Railway directly — tokens are generated, refreshed, and distributed automatically.
 
+> [!CAUTION]
+> **Before editing any Railway token code**, read the [Critical Rules](#critical-rules) section below. Past bugs were caused by faulty assumptions about how Railway's OAuth tokens work.
+
+---
+
+## Railway OAuth Behavior
+
+> Source: [Railway Login & Tokens docs](https://docs.railway.com/integrations/oauth/login-and-tokens)
+
+### Token Lifecycle
+
+| Token | Env Var | Lifetime | On Refresh |
+|-------|---------|----------|------------|
+| **Access token** | `RAILWAY_API_TOKEN` | **1 hour** | Old token remains valid until expiry. New refreshes do NOT invalidate previous access tokens. |
+| **Refresh token** | `RAILWAY_REFRESH_TOKEN` | **1 year** | **Rotated**: "may initially contain the same value, but will eventually return a new token." Always store the latest. |
+| **Project token** | `RAILWAY_TOKEN` | Static | Regenerated on each cron cycle via `projectTokenCreate` mutation. |
+
+### What Railway Returns on Refresh
+
+```
+POST https://backboard.railway.com/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token
+&refresh_token=<current_refresh_token>
+&client_id=<client_id>
+&client_secret=<client_secret>
+
+→ 200 OK
+{
+  "access_token": "new-access-token",    ← valid for 1 hour
+  "refresh_token": "same-or-rotated",    ← ALWAYS store this
+  "expires_in": 3600,
+  "token_type": "Bearer",
+  "id_token": "...",
+  "scope": "openid email profile offline_access workspace:admin project:member"
+}
+```
+
+### Key Behaviors
+
+- **Access tokens are NOT invalidated** by new refreshes — they stay valid until their 1-hour TTL expires
+- **Refresh tokens ARE rotated** — Railway may return the same value initially but will eventually rotate it
+- **Using an old rotated refresh token will FAIL** and require full re-authentication (admin must click Reconnect in Settings)
+- **Max 100 refresh tokens per user** — oldest are auto-revoked (our hourly cron is well within this limit)
+
+---
+
+## Critical Rules
+
+> [!IMPORTANT]
+> These rules exist because of real bugs we discovered. Do not remove or weaken them.
+
+### 1. Single Writer for OAuth Tokens
+
+Only the **cron endpoint** (`/api/cron/refresh-tokens`) should call Railway's `/oauth/token`. The OAuth callback (`/api/auth/railway/callback`) is the only exception — it does the initial code→token exchange.
+
+**Why**: Each call to `/oauth/token` may rotate the refresh token. If two processes refresh simultaneously, one will write a stale refresh token to `.env`, and the next refresh will fail with `invalid_grant`.
+
+### 2. Read from `.env`, Not `process.env`
+
+All Railway env var reads at runtime **must** use `getFreshEnvVar()` or its wrappers (`getFreshAccountToken()`, `getFreshRefreshToken()`).
+
+**Why**: `process.env` is loaded once at server start. If the cron refreshes the token and writes it to `.env`, but the server restarts or crash-loops, `process.env` holds the old value. Reading from `.env` always gets the latest.
+
+### 3. Always Store the Latest Refresh Token
+
+`persistMCTokens()` writes both access and refresh tokens to **both** `.env` (disk) and `process.env` (memory). This dual-write pattern ensures:
+- `.env` — survives process restarts (source of truth)
+- `process.env` — available immediately without file I/O
+
+**Never skip writing the refresh token**, even if it looks the same as the old one. Railway's rotation is eventual, not immediate.
+
+### 4. No Manual OAuth Calls
+
+Never manually `curl` Railway's `/oauth/token` endpoint. It will:
+1. Generate a new access token (fine)
+2. Potentially rotate the refresh token (dangerous — the new refresh token won't be stored by Mission Control)
+3. Cause the next cron refresh to fail with `invalid_grant`
+
+If you need to test, use the cron endpoint: `curl http://localhost:3000/api/cron/refresh-tokens`
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         Mission Control                              │
+│                                                                      │
+│  Settings UI ─→ /api/auth/railway/login  ─→ Railway OAuth consent    │
+│                 /api/auth/railway/callback ←─ code exchange (PKCE)   │
+│                       │                                              │
+│                       ▼                                              │
+│              persistMCTokens() ─→ .env + process.env                 │
+│              discoverAndLinkRailwayProjects()                        │
+│              distributeProjectTokens()                               │
+│                       │                                              │
+│  ┌────────────────────┴─────────────────────────┐                    │
+│  │  Cron (45 * * * *)                           │                    │
+│  │  /api/cron/refresh-tokens                    │                    │
+│  │                                              │                    │
+│  │  1. getFreshRefreshToken() ← reads .env      │                    │
+│  │  2. POST /oauth/token                        │                    │
+│  │  3. persistMCTokens()                        │                    │
+│  │  4. distributeTokenToAgents() → 12 agents    │                    │
+│  │  5. distributeProjectTokens() → 4 projects   │                    │
+│  └──────────────────────────────────────────────┘                    │
+│                                                                      │
+│  Status: /api/auth/railway/status ← validates via { me { name } }    │
+│  Self-service: /api/tokens/railway ← agents request their own token  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### File Map
+
+| File | Role | Reads Token From |
+|------|------|------------------|
+| `src/lib/token-utils.ts` | Core utilities: env read/write, token gen, distribution, discovery | `.env` via `getFreshEnvVar()` |
+| `src/app/api/cron/refresh-tokens/route.ts` | Hourly refresh + distribution (SOLE WRITER) | `.env` via `getFreshRefreshToken()` |
+| `src/app/api/auth/railway/callback/route.ts` | OAuth code→token exchange (initial auth only) | Request params + Railway API |
+| `src/app/api/auth/railway/status/route.ts` | Health check with live API validation | `.env` via `getFreshEnvVar()` |
+| `src/app/api/tokens/railway/route.ts` | Self-service token API for agents | `.env` via `getFreshAccountToken()` |
+| `src/app/api/projects/[id]/railway/route.ts` | Manual project linking (PATCH) | N/A (writes to DB) |
+| `mc.py` (CLI) | `mc railway-token`, `mc railway-discover`, `mc railway-status` | Calls MC API endpoints |
+
+---
+
 ## Token Types
 
-| Token | Env Var | Scope | Lifetime |
-|-------|---------|-------|----------|
-| **Account token** | `RAILWAY_API_TOKEN` | Full Railway API access (all projects) | 1 hour (auto-refreshed) |
-| **Refresh token** | `RAILWAY_REFRESH_TOKEN` | Used to obtain new account tokens | Long-lived (rotated on each use) |
-| **Project token** | `RAILWAY_TOKEN` | Scoped to one project + environment | Static (regenerated on refresh) |
+| Token | Env Var | Scope | Set By |
+|-------|---------|-------|--------|
+| **Account token** | `RAILWAY_API_TOKEN` | Full Railway API access (all projects) | Cron refresh, OAuth callback |
+| **Refresh token** | `RAILWAY_REFRESH_TOKEN` | Obtain new account tokens | Cron refresh, OAuth callback |
+| **Project token** | `RAILWAY_TOKEN` | Scoped to one project + environment | Cron, self-service API |
 
-**Account tokens** are shared with all agents for general Railway API queries. **Project tokens** are scoped to the specific Railway project each agent owns — safer for deployments since they can't affect other projects.
+**Account tokens** are shared with all agents for general Railway API queries. **Project tokens** are scoped to the specific Railway project each agent owns — safer for deployments.
 
-## How It Works
+---
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Mission Control                            │
-│                                                                 │
-│  1. OAuth → Railway (admin clicks Reconnect in Settings)        │
-│  2. Token exchange → access_token + refresh_token               │
-│  3. Auto-discovery: match Railway projects → MC projects        │
-│  4. Generate project tokens via projectTokenCreate mutation      │
-│  5. Distribute to all 12 agent workspace .env files             │
-│  6. Cron refreshes account token every 45 min                   │
-│  7. On each refresh, regenerate + redistribute project tokens   │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Environment Variables Reference
 
-### Token Flow
+| Variable | Location | Set By | Read By | Notes |
+|----------|----------|--------|---------|-------|
+| `RAILWAY_API_TOKEN` | MC `.env` + all agent `.env` | Cron, callback | All API routes, agents | 1h TTL, auto-refreshed |
+| `RAILWAY_REFRESH_TOKEN` | MC `.env` only | Cron, callback | Cron only | Rotated by Railway; 1-year TTL |
+| `RAILWAY_CLIENT_ID` | MC `.env` only | Admin (manual) | Cron, callback, login | From Railway OAuth app settings |
+| `RAILWAY_CLIENT_SECRET` | MC `.env` only | Admin (manual) | Cron, callback | From Railway OAuth app settings |
+| `RAILWAY_LAST_REFRESH_AT` | MC `.env` only | Cron, callback | Status endpoint | ISO 8601 timestamp |
+| `RAILWAY_TOKEN` | Agent `.env` only | Cron, self-service | Agents (Railway CLI) | Per-project scoped token |
+| `MISSION_CONTROL_URL` | MC `.env` only | Admin (manual) | Callback | Used to build redirect URI |
 
-1. **Admin connects Railway** — Settings → Integrations → Railway → Connect/Reconnect
-2. **OAuth callback** exchanges the auth code for tokens via PKCE
-3. **Auto-discovery** queries all Railway workspaces, fetches their projects, and fuzzy-matches them to MC projects by name (case-insensitive, ignoring hyphens/spaces)
-4. **Distribution** writes `RAILWAY_API_TOKEN` (account) and `RAILWAY_TOKEN` (project-scoped) to each agent's `~/.openclaw/workspace-{agent}/.env`
-5. **Cron** (`*/45 * * * *`) refreshes the account token before it expires and redistributes everything
+---
 
-### Auto-Discovery Matching
+## Auto-Discovery Matching
 
-Railway projects are matched to MC projects by normalized name:
+Railway projects are matched to MC projects by normalized name (case-insensitive, ignoring hyphens/underscores/spaces):
 
 | Railway Project | MC Project | Agent | Match? |
 |----------------|------------|-------|--------|
@@ -50,6 +170,8 @@ Railway projects are matched to MC projects by normalized name:
 
 Unmatched projects can be linked manually via `PATCH /api/projects/:id/railway`.
 
+---
+
 ## For Agents
 
 ### Getting Your Project Token
@@ -60,15 +182,11 @@ Your `RAILWAY_TOKEN` is automatically written to your workspace `.env` by Missio
 mc railway-token
 ```
 
-This calls MC's self-service API, generates a new project token, and writes it to your `.env`.
-
 ### Checking Railway Status
 
 ```bash
 mc railway-status
 ```
-
-Shows whether Railway is connected, token health, and last refresh time.
 
 ### Triggering Discovery
 
@@ -86,31 +204,17 @@ mc railway-discover --generate
 | Query Railway API (list services, check logs) | `RAILWAY_API_TOKEN` (account-level) |
 | Create/delete projects | `RAILWAY_API_TOKEN` (account-level) |
 
-### Example: Deploy with Railway CLI
-
-```bash
-# RAILWAY_TOKEN is already in your .env
-railway up
-```
-
-### Example: Query Railway API
-
-```bash
-curl -s -X POST https://backboard.railway.com/graphql/v2 \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-  -d '{"query":"{ me { name } }"}'
-```
+---
 
 ## API Reference
 
 ### Self-Service Token
 
 ```
-GET /api/tokens/railway?agentId=captain
+GET /api/tokens/railway?agentId=captain[&writeEnv=false]
 ```
 
-Returns a fresh project token for the agent. Writes it to the agent's `.env` by default. Add `&writeEnv=false` to skip.
+Returns a fresh project token for the agent. Writes it to the agent's `.env` by default.
 
 ### Auto-Discovery
 
@@ -136,25 +240,18 @@ Content-Type: application/json
 GET /api/auth/railway/status
 ```
 
-Returns: `connected`, `hasRefreshToken`, `lastRefreshAt`, `tokenAgeMinutes`, `healthy`.
+Returns: `connected`, `hasRefreshToken`, `lastRefreshAt`, `tokenAgeMinutes`, `tokenValid`, `healthy`.
+
+---
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| `RAILWAY_TOKEN` missing from `.env` | Run `mc railway-token` |
-| `RAILWAY_API_TOKEN` expired | Click "Refresh Now" in Settings or wait for cron |
-| `invalid_grant` error | Admin must click "Reconnect" in Settings (refresh token is stale) |
-| New project not auto-linked | Run `mc railway-discover --generate` |
-| `mc railway-token` says "No Railway-linked project" | Link it: `PATCH /api/projects/:id/railway` with Railway UUIDs |
-
-## Architecture
-
-```
-src/lib/token-utils.ts          — Core: token generation, distribution, discovery
-src/app/api/tokens/railway/     — Self-service API (GET token, POST discover)
-src/app/api/cron/refresh-tokens — Cron: refresh + redistribute every 45 min
-src/app/api/auth/railway/       — OAuth flow (login, callback, status)
-src/app/api/projects/[id]/railway — Manual project linking
-mc.py                           — CLI commands (railway-token, railway-discover, railway-status)
-```
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `tokenValid: false` after restart | Service crash-loop lost `process.env` state | Fixed by reading from `.env` via `getFreshEnvVar()` |
+| `invalid_grant` error | Refresh token was rotated by an external call | Admin must click "Reconnect" in Settings |
+| `RAILWAY_TOKEN` missing from agent `.env` | Agent not linked or cron hasn't run | Run `mc railway-token` or `mc railway-discover --generate` |
+| `RAILWAY_API_TOKEN` expired | Cron didn't run or service was down | Click "Refresh Now" in Settings or wait for next cron |
+| `Not Authorized` from Railway API | Token is stale (>1h old) and cron missed | Trigger manual refresh: `curl http://localhost:3000/api/cron/refresh-tokens` |
+| New project not auto-linked | Name doesn't fuzzy-match | Link manually: `PATCH /api/projects/:id/railway` |
+| `mc railway-token` says "No Railway-linked project" | Project not linked to Railway | Run `mc railway-discover` first, or link manually |

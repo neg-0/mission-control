@@ -1,9 +1,37 @@
 /**
  * @module token-utils
- * @description
+ *
  * Utilities for persisting Railway OAuth tokens to .env files,
  * distributing access tokens to OpenClaw agent workspaces,
  * and generating per-project Railway tokens via the GraphQL API.
+ *
+ * ## Railway OAuth Token Lifecycle (from official docs)
+ *
+ * | Token          | Lifetime        | Behavior on refresh                              |
+ * |----------------|-----------------|--------------------------------------------------|
+ * | Access token   | 1 hour          | NOT invalidated by new refreshes; valid until     |
+ * |                |                 | natural expiry                                    |
+ * | Refresh token  | 1 year          | Rotated: "may initially return the same value,    |
+ * |                |                 | but will eventually return a new token"           |
+ *
+ * Source: https://docs.railway.com/integrations/oauth/login-and-tokens
+ *
+ * ## Critical Rules
+ *
+ * 1. **Single writer**: Only the cron endpoint (`/api/cron/refresh-tokens`)
+ *    should call Railway's `/oauth/token`. Manual calls will rotate the
+ *    refresh token and desync the stored value.
+ *
+ * 2. **Always store the latest refresh token**: Railway says "using an old,
+ *    rotated token will fail, and the user would need to re-authenticate".
+ *    `persistMCTokens()` handles this by writing both .env AND process.env.
+ *
+ * 3. **Read from .env, not process.env**: `process.env` can go stale after
+ *    server restarts, crash-loops, or external writes. Use `getFreshEnvVar()`
+ *    for all Railway-related env var reads at runtime.
+ *
+ * 4. **Max 100 refresh tokens per user**: Oldest are auto-revoked.
+ *    Our hourly cron is well within this limit.
  */
 
 import { readFile, writeFile } from 'fs/promises';
@@ -16,24 +44,45 @@ const MC_ENV_PATH = path.join(process.cwd(), '.env');
 const RAILWAY_GQL_ENDPOINT = 'https://backboard.railway.com/graphql/v2';
 
 // ---------------------------------------------------------------------------
-// Fresh token retrieval (avoids stale process.env)
+// Fresh env var retrieval (avoids stale process.env)
 // ---------------------------------------------------------------------------
 
 /**
- * Read the Railway account token directly from the .env file.
- * Falls back to process.env if file read fails.
- * 
- * This is important because process.env can hold a stale token
- * if the token was refreshed by a different process (e.g. cron curl, tsx script).
+ * Read a value directly from Mission Control's .env file.
+ *
+ * WHY: `process.env` is loaded once at server start and can become stale if:
+ *   - The cron refreshed the token and wrote a new value to .env
+ *   - The service crashed and restarted mid-refresh
+ *   - An external script (tsx, curl) updated the .env
+ *
+ * Falls back to `process.env[key]` if the .env file can't be read.
  */
-export async function getFreshAccountToken(): Promise<string | null> {
+export async function getFreshEnvVar(key: string): Promise<string | null> {
   try {
     const content = await readFile(MC_ENV_PATH, 'utf-8');
-    const match = content.match(/^RAILWAY_API_TOKEN=(.+)$/m);
-    return match?.[1]?.trim() ?? process.env.RAILWAY_API_TOKEN ?? null;
+    const match = content.match(new RegExp(`^${key}=(.+)$`, 'm'));
+    return match?.[1]?.trim() ?? process.env[key] ?? null;
   } catch {
-    return process.env.RAILWAY_API_TOKEN ?? null;
+    return process.env[key] ?? null;
   }
+}
+
+/**
+ * Read the Railway account (access) token from .env.
+ * This is the token used to authenticate API requests to Railway.
+ * It expires after 1 hour and is refreshed by the cron.
+ */
+export async function getFreshAccountToken(): Promise<string | null> {
+  return getFreshEnvVar('RAILWAY_API_TOKEN');
+}
+
+/**
+ * Read the Railway refresh token from .env.
+ * This is used by the cron to obtain new access tokens without user interaction.
+ * Railway rotates this value — always use the latest one from .env.
+ */
+export async function getFreshRefreshToken(): Promise<string | null> {
+  return getFreshEnvVar('RAILWAY_REFRESH_TOKEN');
 }
 
 // ---------------------------------------------------------------------------
@@ -42,9 +91,15 @@ export async function getFreshAccountToken(): Promise<string | null> {
 
 /**
  * Update (or append) a single KEY=value in a .env file.
+ *
  * - If the key already exists, its value is replaced in-place.
  * - If the key does not exist, a new line is appended.
  * - Preserves all other content and comments.
+ *
+ * ⚠️ NOT safe for concurrent writes to the same file.
+ * The cron endpoint is the only writer for Railway tokens,
+ * so this is fine in practice. If multiple writers are ever
+ * introduced, add file locking (e.g. `proper-lockfile`).
  */
 export async function updateEnvVar(
   envPath: string,
@@ -59,19 +114,27 @@ export async function updateEnvVar(
     content = '';
   }
 
-  const regex = new RegExp(`^${key}=.*$`, 'm');
+  const lines = content.split('\n');
+  let found = false;
 
-  if (regex.test(content)) {
-    content = content.replace(regex, `${key}=${value}`);
-  } else {
-    // Ensure there's a trailing newline before appending
-    if (content.length > 0 && !content.endsWith('\n')) {
-      content += '\n';
+  for (let i = 0; i < lines.length; i++) {
+    // Match KEY= at start of line (handles values with special chars)
+    if (lines[i].startsWith(`${key}=`)) {
+      lines[i] = `${key}=${value}`;
+      found = true;
+      break;
     }
-    content += `${key}=${value}\n`;
   }
 
-  await writeFile(envPath, content, 'utf-8');
+  if (!found) {
+    // Ensure there's a trailing newline before appending
+    if (lines.length > 0 && lines[lines.length - 1] !== '') {
+      lines.push('');
+    }
+    lines.push(`${key}=${value}`);
+  }
+
+  await writeFile(envPath, lines.join('\n'), 'utf-8');
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +208,16 @@ export async function distributeTokenToAgents(
 // ---------------------------------------------------------------------------
 
 /**
- * Persist tokens to Mission Control's own .env and update process.env in-memory.
+ * Persist tokens to Mission Control's own .env AND update process.env in-memory.
+ *
+ * The dual-write pattern ensures:
+ *   1. `.env` — survives process restarts (source of truth on disk)
+ *   2. `process.env` — available immediately in the current process
+ *     without needing to re-read the file
+ *
+ * Railway rotates refresh tokens. The response "may initially contain
+ * the same value, but will eventually return a new token" (Railway docs).
+ * We ALWAYS write whatever Railway returns, even if it looks the same.
  */
 export async function persistMCTokens(
   accessToken: string,
