@@ -34,9 +34,9 @@ interface IdeasKanbanProps {
 
 const COLUMNS = [
   { key: 'draft', label: '💡 New', statuses: ['draft', 'new'] },
-  { key: 'refining', label: '🔬 Refining', statuses: ['refining', 'researching'] },
-  { key: 'building_lp', label: '🏗️ Building LP', statuses: ['building_lp'] },
-  { key: 'validating', label: '⚔️ The Arena', statuses: ['validating'] },
+  { key: 'refining', label: '🔬 Refining', statuses: ['refining', 'researching', 'pain_audit', 'copy_draft', 'outreach_scan', 'brief_sent'] },
+  { key: 'building_lp', label: '🏗️ Building LP', statuses: ['building_lp', 'landing_page', 'landing_page_complete'] },
+  { key: 'validating', label: '⚔️ The Arena', statuses: ['validating', 'outreach_exec'] },
   { key: 'graduated', label: '✅ Validated', statuses: ['graduated', 'validated'] },
   { key: 'killed', label: '💀 Graveyard', statuses: ['killed', 'rejected', 'review_failed'] },
 ];

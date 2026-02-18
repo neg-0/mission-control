@@ -26,7 +26,6 @@ import { ScheduleManager } from '../components/ScheduleManager';
 import { SettingsPage } from '../components/SettingsPage';
 
 import { IdeaDetail } from '../components/IdeaDetail';
-import { IdeaDetailModal } from '../components/IdeaDetailModal';
 import { IdeasKanban } from '../components/IdeasKanban';
 import InfraMonitor from '../components/InfraMonitor';
 import { MrrMeter } from '../components/MrrMeter';
@@ -335,7 +334,9 @@ function MissionControlInner() {
 
   // Dashboard data (War Room)
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
-  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(
+    searchParams.get('idea')
+  );
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
 
@@ -387,6 +388,7 @@ function MissionControlInner() {
       const urlDetail = params.get('detail') as 'overview' | 'goals' | 'schedule' | 'files' | null;
       const urlFile = params.get('file');
       const urlQ = params.get('q');
+      const urlIdea = params.get('idea');
 
       if (urlTab) setActiveTab(urlTab);
       if (urlAgent !== selectedAgentId) setSelectedAgentId(urlAgent);
@@ -394,6 +396,7 @@ function MissionControlInner() {
       else if (!urlAgent) setAgentDetailTab('overview');
       if (urlFile !== searchSelectedFile) setSearchSelectedFile(urlFile);
       if (urlQ !== highlightQuery) setHighlightQuery(urlQ);
+      setSelectedIdeaId(urlIdea);
 
       // Derive workspace from agent
       if (urlAgent) {
@@ -749,7 +752,7 @@ function MissionControlInner() {
                 return (
                   <button
                     key={tab}
-                    onClick={() => { setActiveTab(tab); syncUrl({ tab, agent: tab === 'agents' ? selectedAgentId : null, detail: tab === 'agents' && selectedAgentId ? agentDetailTab : null }); }}
+                    onClick={() => { setActiveTab(tab); setSelectedIdeaId(null); syncUrl({ tab, agent: tab === 'agents' ? selectedAgentId : null, detail: tab === 'agents' && selectedAgentId ? agentDetailTab : null }); }}
                     className={cn(
                       'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap shrink-0',
                       activeTab === tab
@@ -907,13 +910,23 @@ function MissionControlInner() {
                 {selectedIdeaId ? (
                   <IdeaDetail
                     ideaId={selectedIdeaId}
-                    onBack={() => setSelectedIdeaId(null)}
+                    onBack={() => {
+                      setSelectedIdeaId(null);
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('idea');
+                      window.history.pushState({}, '', url.toString());
+                    }}
                   />
                 ) : (
                   <div className="space-y-4">
                     <IdeasKanban
                       items={dashboardData?.pipeline ?? []}
-                      onCardClick={(ideaId) => setSelectedIdeaId(ideaId)}
+                      onCardClick={(ideaId) => {
+                        setSelectedIdeaId(ideaId);
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('idea', ideaId);
+                        window.history.pushState({}, '', url.toString());
+                      }}
                     />
                   </div>
                 )}
@@ -1174,14 +1187,7 @@ function MissionControlInner() {
 
 
 
-      {/* Legacy modal — only show when NOT on Ideas tab (Ideas tab uses inline IdeaDetail) */}
-      {activeTab !== 'ideas' && (
-        <IdeaDetailModal
-          ideaId={selectedIdeaId}
-          onClose={() => setSelectedIdeaId(null)}
-          onSpawnCeo={(ideaId) => console.log('[MC] Spawn CEO requested for:', ideaId)}
-        />
-      )}
+      {/* Legacy modal removed — Ideas tab uses inline IdeaDetail */}
 
       {showCostBreakdown && (
         <CostBreakdown onClose={() => setShowCostBreakdown(false)} />

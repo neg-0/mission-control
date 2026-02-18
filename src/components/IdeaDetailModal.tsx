@@ -2,14 +2,26 @@
 
 import { useEffect, useState } from 'react';
 
+interface Scorecard {
+  id: string;
+  category: string;
+  score: number;
+  rationale?: string;
+}
+
 interface IdeaDetail {
   id: string;
-  name: string;
-  description: string;
-  source: string;
+  title: string;
+  description: string | null;
+  source: string | null;
   status: string;
-  scores: Record<string, number>;
-  artifacts: string[];
+  stage: string;
+  score: number | null;
+  researchNotes: string | null;
+  scorecards: Scorecard[];
+  refineryData: Record<string, any> | null;
+  validationMetrics: Record<string, unknown> | null;
+  project: { id: string; name: string; stage: string } | null;
 }
 
 interface IdeaDetailModalProps {
@@ -62,7 +74,7 @@ export function IdeaDetailModal({ ideaId, onClose, onSpawnCeo }: IdeaDetailModal
     setLoading(true);
     setError(null);
 
-    fetch(`/api/idea/${ideaId}`)
+    fetch(`/api/ideas/${ideaId}`)
       .then((res) => {
         if (!res.ok) throw new Error('Not found');
         return res.json();
@@ -112,7 +124,7 @@ export function IdeaDetailModal({ ideaId, onClose, onSpawnCeo }: IdeaDetailModal
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
 
       <div
-        className="relative w-full max-w-lg glass-card p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto glass-card p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -139,7 +151,13 @@ export function IdeaDetailModal({ ideaId, onClose, onSpawnCeo }: IdeaDetailModal
           <>
             <div>
               <div className="text-[10px] font-mono text-muted-foreground">{idea.id}</div>
-              <h2 className="text-lg font-semibold mt-0.5">{idea.name}</h2>
+              <h2 className="text-lg font-semibold mt-0.5">{idea.title}</h2>
+              <div className="flex gap-2 mt-1">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 uppercase tracking-wider">{idea.status}</span>
+                {idea.stage && idea.stage !== idea.status && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 uppercase tracking-wider">{idea.stage}</span>
+                )}
+              </div>
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider mt-1">
                 {idea.source}
               </div>
@@ -149,18 +167,69 @@ export function IdeaDetailModal({ ideaId, onClose, onSpawnCeo }: IdeaDetailModal
               {idea.description}
             </p>
 
-            <div className="space-y-2 pt-2">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Score Breakdown
-              </h3>
-              {Object.entries(idea.scores).map(([key, value]) => (
-                <ScoreBar
-                  key={key}
-                  label={scoreLabels[key] || key}
-                  value={value}
-                />
-              ))}
-            </div>
+            {/* Scorecards */}
+            {idea.scorecards?.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  Score Breakdown
+                </h3>
+                {idea.scorecards.map((sc) => (
+                  <ScoreBar
+                    key={sc.id}
+                    label={scoreLabels[sc.category] || sc.category}
+                    value={sc.score}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Research Notes */}
+            {idea.researchNotes && (
+              <div className="pt-2">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Research Notes</h3>
+                <pre className="text-xs text-foreground/70 whitespace-pre-wrap max-h-40 overflow-y-auto bg-card/30 p-2 rounded">{idea.researchNotes}</pre>
+              </div>
+            )}
+
+            {/* Refinery Data */}
+            {idea.refineryData && (
+              <div className="pt-2 space-y-3">
+                {/* Pain Points */}
+                {idea.refineryData.pain_points && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Pain Points</h3>
+                    <ul className="text-xs text-foreground/70 space-y-1">
+                      {(idea.refineryData.pain_points as string[]).map((p: string, i: number) => (
+                        <li key={i} className="flex gap-1"><span className="text-red-400">•</span> {p}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Copy */}
+                {idea.refineryData.copy && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Landing Page Copy</h3>
+                    <div className="text-xs bg-card/30 p-2 rounded space-y-1">
+                      <div className="font-semibold text-emerald-400">{idea.refineryData.copy.headline}</div>
+                      <div className="text-foreground/70">{idea.refineryData.copy.subhead}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Outreach Drafts */}
+                {idea.refineryData.outreach_drafts && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Outreach Drafts</h3>
+                    <pre className="text-xs text-foreground/70 whitespace-pre-wrap max-h-40 overflow-y-auto bg-card/30 p-2 rounded">
+                      {typeof idea.refineryData.outreach_drafts === 'string'
+                        ? idea.refineryData.outreach_drafts
+                        : JSON.stringify(idea.refineryData.outreach_drafts, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Decision Controls */}
             <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border/30">

@@ -104,9 +104,36 @@ export async function PATCH(
       }
     }
 
+    // Handle scorecards — upsert each category
+    if (body.scorecards && Array.isArray(body.scorecards)) {
+      for (const sc of body.scorecards) {
+        if (!sc.category || sc.score === undefined) continue;
+        // Try to find existing scorecard for this idea+category
+        const existing = await prisma.scorecard.findFirst({
+          where: { ideaId: params.id, category: sc.category }
+        });
+        if (existing) {
+          await prisma.scorecard.update({
+            where: { id: existing.id },
+            data: { score: sc.score, rationale: sc.rationale || null }
+          });
+        } else {
+          await prisma.scorecard.create({
+            data: {
+              ideaId: params.id,
+              category: sc.category,
+              score: sc.score,
+              rationale: sc.rationale || null
+            }
+          });
+        }
+      }
+    }
+
     const updated = await prisma.idea.update({
       where: { id: params.id },
-      data
+      data,
+      include: { scorecards: true }
     });
 
     return NextResponse.json(updated);

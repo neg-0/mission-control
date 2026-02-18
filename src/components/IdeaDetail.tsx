@@ -38,7 +38,7 @@ interface IdeaFull {
   validationDeadline?: string | null;
   validationTarget?: number | null;
   validationMetrics?: { signups?: number; traffic?: number; conversion?: string } | null;
-  refineryData?: { painPoints?: string[]; avatars?: string[]; copyVariants?: string[] } | null;
+  refineryData?: Record<string, any> | null;
   timeRemaining?: number | null;
   isExpired?: boolean;
 }
@@ -569,9 +569,9 @@ export function IdeaDetail({ ideaId, onBack }: IdeaDetailProps) {
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 😫 Pain Points
               </h4>
-              {idea.refineryData?.painPoints?.length ? (
+              {idea.refineryData?.pain_points?.length ? (
                 <ul className="space-y-1">
-                  {idea.refineryData.painPoints.map((p, i) => (
+                  {idea.refineryData.pain_points.map((p: string, i: number) => (
                     <li key={i} className="text-xs text-foreground/80 flex items-start gap-2">
                       <span className="text-red-400 mt-0.5">•</span> {p}
                     </li>
@@ -582,41 +582,186 @@ export function IdeaDetail({ ideaId, onBack }: IdeaDetailProps) {
               )}
             </div>
 
-            {/* Avatars */}
+            {/* Landing Page Copy */}
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                👤 Target Avatars
+                ✍️ Landing Page Copy
               </h4>
-              {idea.refineryData?.avatars?.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {idea.refineryData.avatars.map((a, i) => (
-                    <span key={i} className="text-xs bg-sky-500/10 text-sky-400 px-2 py-1 rounded border border-sky-500/20">
-                      {a}
-                    </span>
-                  ))}
+              {idea.refineryData?.copy ? (
+                <div className="bg-card/50 p-3 rounded border border-border/30 space-y-2">
+                  <div className="text-sm font-bold text-emerald-400">{idea.refineryData.copy.headline}</div>
+                  <div className="text-xs text-foreground/70">{idea.refineryData.copy.subhead}</div>
+                  {idea.refineryData.copy.cta && (
+                    <div className="text-xs text-sky-400 font-medium">CTA: {idea.refineryData.copy.cta}</div>
+                  )}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground italic">No avatars defined yet</p>
+                <p className="text-xs text-muted-foreground italic">No copy drafted yet</p>
               )}
             </div>
 
-            {/* Copy Variants */}
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                ✍️ Copy Variants
-              </h4>
-              {idea.refineryData?.copyVariants?.length ? (
-                <div className="space-y-2">
-                  {idea.refineryData.copyVariants.map((c, i) => (
-                    <div key={i} className="text-sm font-medium bg-card/50 p-2 rounded border border-border/30">
-                      &ldquo;{c}&rdquo;
+            {/* Outreach Targets */}
+            {idea.refineryData?.outreach_targets?.targets && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  🎯 Outreach Targets
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {idea.refineryData.outreach_targets.targets.map((t: any, i: number) => (
+                    <a key={i} href={t.url} target="_blank" rel="noopener noreferrer"
+                      className="text-xs bg-sky-500/10 text-sky-400 px-2 py-1 rounded border border-sky-500/20 hover:bg-sky-500/20 transition-colors">
+                      {t.channel}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Subreddit Rules */}
+            {idea.refineryData?.subreddit_rules && idea.refineryData.subreddit_rules.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  📜 Community Rules
+                </h4>
+                <div className="space-y-1.5">
+                  {idea.refineryData.subreddit_rules.map((rule: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold ${
+                        rule.recommended_approach === 'post' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                        rule.recommended_approach === 'comment_only' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                        rule.recommended_approach === 'banned' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                        'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                      }`}>
+                        {rule.recommended_approach === 'post' ? '✅ POST OK' :
+                         rule.recommended_approach === 'comment_only' ? '💬 COMMENT ONLY' :
+                         rule.recommended_approach === 'banned' ? '🚫 BANNED' : '❓ UNKNOWN'}
+                      </span>
+                      <span className="text-foreground/80 font-medium">{rule.subreddit}</span>
+                      {rule.restrictions && (
+                        <span className="text-muted-foreground">— {rule.restrictions}</span>
+                      )}
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground italic">No copy variants drafted yet</p>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Outreach Drafts */}
+            {idea.refineryData?.outreach_drafts && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  📣 Outreach Drafts
+                </h4>
+                {Array.isArray(idea.refineryData.outreach_drafts) ? (
+                  <div className="space-y-4">
+                    {idea.refineryData.outreach_drafts.map((draft: any, i: number) => {
+                      const channel = draft.channel || '';
+                      const subreddit = channel.replace(/^(Reddit\s+)?r\//, '');
+                      const redditSubmitUrl = subreddit
+                        ? `https://www.reddit.com/r/${subreddit}/submit?type=self&title=${encodeURIComponent(draft.title || '')}&text=${encodeURIComponent(draft.body || '')}`
+                        : null;
+                      return (
+                        <div key={i} className="bg-card/40 border border-border/40 rounded-lg overflow-hidden">
+                          {/* Header bar */}
+                          <div className="flex items-center justify-between px-3 py-2 bg-card/60 border-b border-border/30">
+                            <div className="flex items-center gap-2">
+                              {redditSubmitUrl ? (
+                                <a href={`https://www.reddit.com/r/${subreddit}`} target="_blank" rel="noopener noreferrer"
+                                  className="text-xs font-semibold text-orange-400 hover:text-orange-300 flex items-center gap-1.5 transition-colors">
+                                  <span>📌</span> r/{subreddit}
+                                  <span className="text-[10px] opacity-60">↗</span>
+                                </a>
+                              ) : (
+                                <span className="text-xs font-semibold text-muted-foreground">{channel}</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground">Post {i + 1} of {idea.refineryData!.outreach_drafts.length}</span>
+                              {redditSubmitUrl && (
+                                <a href={redditSubmitUrl} target="_blank" rel="noopener noreferrer"
+                                  className="text-[11px] font-medium bg-orange-500 hover:bg-orange-400 text-white px-2.5 py-1 rounded transition-colors flex items-center gap-1">
+                                  🚀 Post to Reddit
+                                </a>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Title — click to copy */}
+                          <div
+                            onClick={() => {
+                              navigator.clipboard.writeText(draft.title || '');
+                              const el = document.getElementById(`draft-title-${i}`);
+                              if (el) { el.textContent = '✓ Copied!'; setTimeout(() => { el.textContent = draft.title; }, 1500); }
+                            }}
+                            className="px-3 py-2 cursor-pointer hover:bg-primary/5 transition-colors group border-b border-border/20"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Title</span>
+                              <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">click to copy</span>
+                            </div>
+                            <p id={`draft-title-${i}`} className="text-sm font-semibold text-foreground/90 mt-0.5">{draft.title}</p>
+                          </div>
+
+                          {/* Body — click to copy */}
+                          <div
+                            onClick={() => {
+                              navigator.clipboard.writeText(draft.body || '');
+                              const el = document.getElementById(`draft-body-toast-${i}`);
+                              if (el) { el.classList.remove('opacity-0'); el.classList.add('opacity-100'); setTimeout(() => { el.classList.remove('opacity-100'); el.classList.add('opacity-0'); }, 1500); }
+                            }}
+                            className="px-3 py-2 cursor-pointer hover:bg-primary/5 transition-colors group relative"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Body</span>
+                              <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">click to copy</span>
+                            </div>
+                            <p className="text-xs text-foreground/70 mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto leading-relaxed">{draft.body}</p>
+                            <div id={`draft-body-toast-${i}`} className="absolute top-2 right-3 text-[10px] font-medium text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded opacity-0 transition-opacity pointer-events-none">
+                              ✓ Copied!
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <pre className="text-xs text-foreground/70 whitespace-pre-wrap max-h-60 overflow-y-auto bg-card/30 p-3 rounded border border-border/30">
+                    {typeof idea.refineryData.outreach_drafts === 'string'
+                      ? idea.refineryData.outreach_drafts
+                      : JSON.stringify(idea.refineryData.outreach_drafts, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            {/* Creative Brief */}
+            {idea.refineryData?.creative_brief && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  📋 Creative Brief
+                </h4>
+                <pre className="text-xs text-foreground/70 whitespace-pre-wrap max-h-40 overflow-y-auto bg-card/30 p-3 rounded border border-border/30">
+                  {idea.refineryData.creative_brief}
+                </pre>
+              </div>
+            )}
+
+            {/* Source URLs */}
+            {idea.refineryData?.source_urls?.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  🔗 Sources
+                </h4>
+                <ul className="space-y-1">
+                  {idea.refineryData!.source_urls.map((url: string, i: number) => (
+                    <li key={i}>
+                      <a href={url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-sky-400 hover:underline truncate block">{url}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Agent Activity Feed */}
