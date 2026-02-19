@@ -139,12 +139,12 @@ function JobRow({
       <button
         onClick={() => onToggle(job.id, !job.enabled)}
         className="shrink-0 transition-colors"
-        title={job.enabled ? 'Pause job' : 'Enable job'}
+        title={job.enabled ? 'Pause job' : 'Resume job'}
       >
         {job.enabled ? (
-          <Play className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+          <Pause className="w-4 h-4 text-emerald-400 fill-emerald-400" />
         ) : (
-          <Pause className="w-4 h-4 text-zinc-600" />
+          <Play className="w-4 h-4 text-zinc-600" />
         )}
       </button>
 

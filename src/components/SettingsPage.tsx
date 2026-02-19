@@ -297,11 +297,11 @@ function AgentScheduleRow({
       )}
     >
       {/* Toggle */}
-      <button onClick={() => onToggle(schedule.id, !schedule.enabled)} className="shrink-0">
+      <button onClick={() => onToggle(schedule.id, !schedule.enabled)} className="shrink-0" title={schedule.enabled ? 'Pause agent' : 'Resume agent'}>
         {schedule.enabled ? (
-          <Play className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+          <Pause className="w-4 h-4 text-emerald-400 fill-emerald-400" />
         ) : (
-          <Pause className="w-4 h-4 text-zinc-600" />
+          <Play className="w-4 h-4 text-zinc-600" />
         )}
       </button>
 

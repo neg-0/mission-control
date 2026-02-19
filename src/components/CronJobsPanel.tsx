@@ -1,6 +1,6 @@
 'use client';
 
-import { Calendar, Clock, Loader2, Pause, Play, RepeatIcon, Timer } from 'lucide-react';
+import { Calendar, Clock, Loader2, Pause, RepeatIcon, Timer } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 // ---------------------------------------------------------------------------
@@ -143,11 +143,11 @@ export function CronJobsPanel({ agentId }: CronJobsPanelProps) {
             {/* Status indicator */}
             <div className="shrink-0">
               {job.state?.lastStatus === 'ok' ? (
-                <Play className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" title="Last run: OK" />
               ) : job.state?.lastStatus === 'error' ? (
-                <Play className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+                <div className="w-2.5 h-2.5 rounded-full bg-red-400" title="Last run: error" />
               ) : (
-                <Play className="w-3.5 h-3.5 text-zinc-500 fill-zinc-500" />
+                <div className="w-2.5 h-2.5 rounded-full bg-zinc-500" title="No status" />
               )}
             </div>
 
