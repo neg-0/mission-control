@@ -49,6 +49,12 @@ export async function GET(request: Request) {
     if (assigneeId) where.assigneeId = assigneeId;
     if (goalId) where.goalId = goalId;
 
+    // Support excludeStatus param (e.g. ?excludeStatus=done)
+    const excludeStatus = searchParams.get('excludeStatus');
+    if (excludeStatus) {
+      where.status = { ...((where.status && typeof where.status === 'object') ? where.status : {}), not: excludeStatus };
+    }
+
     const tasks = await prisma.task.findMany({
       where,
       orderBy: { createdAt: 'desc' },

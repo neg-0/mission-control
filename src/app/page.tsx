@@ -463,7 +463,7 @@ function MissionControlInner() {
       try {
         // Fetch tasks assigned to user (Dustin) or high-priority unassigned
         const [userRes, criticalRes] = await Promise.all([
-          fetch('/api/tasks?assigneeId=dustin'),
+          fetch('/api/tasks?assigneeId=dustin&excludeStatus=done'),
           fetch('/api/tasks?status=blocked'),
         ]);
         const userTasks: MyTask[] = userRes.ok ? await userRes.json() : [];
