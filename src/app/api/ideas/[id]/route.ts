@@ -92,6 +92,15 @@ export async function PATCH(
       return NextResponse.json(updated);
     }
 
+    // Special Logic: Archive
+    if (body.action === 'archive') {
+      const updated = await prisma.idea.update({
+        where: { id: params.id },
+        data: { status: 'archived' }
+      });
+      return NextResponse.json(updated);
+    }
+
     // Standard Update — only pass known fields
     const allowedFields = ['status', 'stage', 'title', 'description', 'source', 'sourceUrls',
       'score', 'researchNotes', 'refineryData', 'validationMetrics',

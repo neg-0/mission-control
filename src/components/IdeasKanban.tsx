@@ -1,7 +1,8 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useEffect, useRef, useState } from 'react';
+import { Archive, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,15 @@ interface IdeaItem {
   timeRemaining?: number | null;
   isExpired?: boolean;
   scorecards?: ScorecardItem[];
+}
+
+interface ArchivedIdea {
+  id: string;
+  title: string;
+  score: number | null;
+  source: string | null;
+  updatedAt: string;
+  createdAt: string;
 }
 
 interface IdeasKanbanProps {
@@ -78,6 +88,11 @@ function formatCountdown(ms: number): string {
 
 function truncateId(id: string): string {
   return id.split('-')[0] || id.slice(0, 8);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 // ─── Copy-to-Clipboard UUID ────────────────────────────────────────────────────
@@ -258,52 +273,193 @@ function IdeaCard({
   );
 }
 
+// ─── Archive Modal ──────────────────────────────────────────────────────────────
+
+function ArchiveModal({ onClose, onIdeaClick }: { onClose: () => void; onIdeaClick: (id: string) => void }) {
+  const [items, setItems] = useState<ArchivedIdea[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const fetchPage = useCallback(async (cursor?: string | null) => {
+    const isFirst = !cursor;
+    if (isFirst) setLoading(true);
+    else setLoadingMore(true);
+
+    try {
+      const url = cursor
+        ? `/api/ideas?status=archived&cursor=${encodeURIComponent(cursor)}&limit=20`
+        : '/api/ideas?status=archived&limit=20';
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
+      setItems(prev => isFirst ? data.items : [...prev, ...data.items]);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextCursor);
+    } catch (e) {
+      console.error('Archive fetch error:', e);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPage();
+  }, [fetchPage]);
+
+  // Infinite scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    function handleScroll() {
+      if (!el || loadingMore || !hasMore) return;
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      if (scrollHeight - scrollTop - clientHeight < 100) {
+        fetchPage(nextCursor);
+      }
+    }
+
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [hasMore, loadingMore, nextCursor, fetchPage]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="glass-card w-full max-w-lg mx-4 flex flex-col max-h-[70vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border/50">
+          <div className="flex items-center gap-2">
+            <Archive className="w-4 h-4 text-muted-foreground" />
+            <h2 className="font-semibold">Archived Ideas</h2>
+            <span className="text-xs text-muted-foreground bg-card/50 px-1.5 py-0.5 rounded-full font-mono">
+              {items.length}{hasMore ? '+' : ''}
+            </span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* List */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+              Loading…
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-3xl mb-2">🗄️</div>
+              <div className="text-sm text-muted-foreground">No archived ideas yet</div>
+            </div>
+          ) : (
+            <div className="divide-y divide-border/30">
+              {items.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => { onIdeaClick(item.id); onClose(); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/50 transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{item.title}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      {item.source && <span>{item.source} · </span>}
+                      {formatDate(item.updatedAt)}
+                    </div>
+                  </div>
+                  <span className={cn(
+                    'text-xs font-mono px-1.5 py-0.5 rounded border shrink-0',
+                    item.score ? scoreColor(item.score) : 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30'
+                  )}>
+                    {item.score ?? '—'}
+                  </span>
+                </button>
+              ))}
+              {loadingMore && (
+                <div className="py-3 text-center text-xs text-muted-foreground">Loading more…</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────────────────
 
 export function IdeasKanban({ items, onCardClick }: IdeasKanbanProps) {
+  const [showArchive, setShowArchive] = useState(false);
+
   const columns = COLUMNS.map(col => ({
     ...col,
     items: items.filter(item => col.statuses.includes(item.status)),
   }));
 
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-      {columns.map(col => (
-        <div
-          key={col.key}
-          className="flex-shrink-0 w-[220px] min-w-[220px] glass-card p-3 space-y-2"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {col.label}
-            </h3>
-            <span className="text-[10px] text-muted-foreground bg-card/50 px-1.5 py-0.5 rounded-full font-mono">
-              {col.items.length}
-            </span>
-          </div>
+    <>
+      <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+        {columns.map(col => (
+          <div
+            key={col.key}
+            className="flex-shrink-0 w-[220px] min-w-[220px] glass-card p-3 space-y-2"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {col.label}
+              </h3>
+              <div className="flex items-center gap-1.5">
+                {col.key === 'killed' && (
+                  <button
+                    onClick={() => setShowArchive(true)}
+                    className="p-0.5 hover:bg-accent rounded transition-colors text-muted-foreground hover:text-foreground"
+                    title="View archived ideas"
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <span className="text-[10px] text-muted-foreground bg-card/50 px-1.5 py-0.5 rounded-full font-mono">
+                  {col.items.length}
+                </span>
+              </div>
+            </div>
 
-          {col.items.length === 0 ? (
-            <div className="text-xs text-muted-foreground italic text-center py-4">Empty</div>
-          ) : (
-            col.items.map(item =>
-              col.key === 'validating' ? (
-                <ArenaCard
-                  key={item.id}
-                  item={item}
-                  onClick={() => onCardClick?.(item.id)}
-                />
-              ) : (
-                <IdeaCard
-                  key={item.id}
-                  item={item}
-                  isGraveyard={col.key === 'killed'}
-                  onClick={() => onCardClick?.(item.id)}
-                />
+            {col.items.length === 0 ? (
+              <div className="text-xs text-muted-foreground italic text-center py-4">Empty</div>
+            ) : (
+              col.items.map(item =>
+                col.key === 'validating' ? (
+                  <ArenaCard
+                    key={item.id}
+                    item={item}
+                    onClick={() => onCardClick?.(item.id)}
+                  />
+                ) : (
+                  <IdeaCard
+                    key={item.id}
+                    item={item}
+                    isGraveyard={col.key === 'killed'}
+                    onClick={() => onCardClick?.(item.id)}
+                  />
+                )
               )
-            )
-          )}
-        </div>
-      ))}
-    </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {showArchive && (
+        <ArchiveModal
+          onClose={() => setShowArchive(false)}
+          onIdeaClick={(id) => onCardClick?.(id)}
+        />
+      )}
+    </>
   );
 }
