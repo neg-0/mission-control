@@ -24,11 +24,19 @@ model Agent {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  // Native runtime config
+  runtimeMode     String   @default("gateway") // "gateway" (OpenClaw) | "native" (MC runtime)
+  providerPrimary String?  // "openai", "gemini", "anthropic"
+  modelPrimary    String?  // "gpt-5.2-codex", "gemini-3-flash", etc.
+  providerFallback String? // Fallback provider
+  modelFallback   String?  // Fallback model
+
   projects        Project[]
   goals           Goal[]
   metrics         Metric[]
   reports         Report[]
   schedules       Schedule[]
+  sessions        AgentSession[]
 }
 
 // -----------------------------------------------------------------------------
@@ -433,5 +441,49 @@ model AgentJournal {
   metadata    Json?    // Optional structured data (PR numbers, task IDs, etc.)
   createdAt   DateTime @default(now())
 
+  @@index([agentId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Native Runtime: Agent Sessions (Execution Tracking)
+// -----------------------------------------------------------------------------
+
+model AgentSession {
+  id          String    @id @default(uuid())
+  agentId     String
+  agent       Agent     @relation(fields: [agentId], references: [id])
+  status      String    @default("active") // "active", "completed", "failed", "timeout"
+  tokensSent  Int       @default(0)
+  tokensRecv  Int       @default(0)
+  toolCalls   Int       @default(0)
+  iterations  Int       @default(0)
+  provider    String?   // Provider used: "openai", "gemini", "anthropic"
+  model       String?   // Model used: "gpt-5.2-codex", etc.
+  triggerType String?   // "heartbeat", "delegation", "manual"
+  summary     String?   // Brief summary of what was accomplished
+  error       String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([agentId, startedAt])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// Native Runtime: Semantic Memory (Shared Knowledge)
+// -----------------------------------------------------------------------------
+
+model KnowledgeEntry {
+  id          String   @id @default(uuid())
+  projectId   String?  // Null = global knowledge, set = project-scoped
+  agentId     String   // Which agent created this knowledge
+  category    String   @default("learned") // "learned", "fact", "decision", "blocker", "lesson"
+  content     String   // The knowledge content
+  embedding   Bytes?   // Float32 vector stored as binary (for vector search)
+  source      String?  // "reflection", "compaction", "manual", "delegation"
+  expiresAt   DateTime? // Optional TTL for transient knowledge
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, category])
   @@index([agentId, createdAt])
 }

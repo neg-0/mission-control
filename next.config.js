@@ -11,5 +11,22 @@ const nextConfig = {
   },
   // Ensure we are NOT using static export if we rely on dynamic routes/api
   // output: 'export', // Commented out to ensure dynamic server mode
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Agent runtime modules use Node.js APIs (fs, path, child_process)
+      // These are only called server-side (from orchestrator/instrumentation)
+      // but webpack still tries to resolve them. Mark as external.
+      config.externals = config.externals || [];
+      config.externals.push({
+        'fs': 'commonjs fs',
+        'fs/promises': 'commonjs fs/promises',
+        'path': 'commonjs path',
+        'child_process': 'commonjs child_process',
+        'util': 'commonjs util',
+      });
+    }
+    return config;
+  },
 }
 module.exports = nextConfig
+
