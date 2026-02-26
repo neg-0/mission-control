@@ -1,5 +1,8 @@
 # PRD: Mission Control V2 (The War Room)
 
+## 0. Addendums
+- [CarPlay + Siri cockpit PRD](carplay-prd.md)
+
 ## 1. Vision & Strategy
 **The "War Room"** is not just an observability tool—it is the **Command & Control** center for the AI Army.
 It shifts the user's perspective from *Managing Agents* (DevOps) to *Managing a Portfolio* (Venture Capital).
