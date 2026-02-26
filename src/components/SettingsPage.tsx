@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Clock,
+  Cpu,
   Eye,
   Loader2,
   Pause,
@@ -21,7 +22,7 @@ import {
   X,
   Zap
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
 import HeartbeatTuning from './HeartbeatTuning';
 
@@ -625,6 +626,199 @@ function CronJobsReadOnly({ jobs }: { jobs: CronJobInfo[] }) {
 }
 
 // ---------------------------------------------------------------------------
+// Section: Agent Runtime Config
+// ---------------------------------------------------------------------------
+
+interface AgentRuntimeInfo {
+  id: string;
+  role: string;
+  status: string;
+  runtimeMode: string;
+  providerPrimary: string | null;
+  modelPrimary: string | null;
+  providerFallback: string | null;
+  modelFallback: string | null;
+}
+
+const PROVIDER_OPTIONS = [
+  { value: 'gemini', label: 'Google Gemini', color: 'text-blue-400' },
+  { value: 'openai', label: 'OpenAI', color: 'text-emerald-400' },
+  { value: 'anthropic', label: 'Anthropic', color: 'text-orange-400' },
+];
+
+const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'o3-mini'],
+  anthropic: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'],
+};
+
+function AgentRuntimeCard({
+  agent,
+  onUpdate,
+  saving,
+}: {
+  agent: AgentRuntimeInfo;
+  onUpdate: (agentId: string, updates: Partial<AgentRuntimeInfo>) => void;
+  saving: string | null;
+}) {
+  const isNative = agent.runtimeMode === 'native';
+  const isSaving = saving === agent.id;
+  const emoji = AGENT_EMOJIS[agent.id] || '🤖';
+
+  return (
+    <div className={cn(
+      'rounded-lg border px-4 py-3 transition-all',
+      isNative
+        ? 'border-cyan-500/30 bg-gradient-to-r from-cyan-950/20 to-zinc-900/50'
+        : 'border-border/30 bg-zinc-900/30'
+    )}>
+      {/* Row 1: Agent name + mode toggle */}
+      <div className="flex items-center gap-3">
+        <span className="text-base">{emoji}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-zinc-200 truncate">{agent.role}</div>
+          <div className="text-[10px] text-zinc-600 font-mono">{agent.id}</div>
+        </div>
+
+        {/* Mode badge */}
+        <span className={cn(
+          'text-[9px] px-2 py-0.5 rounded-full font-medium shrink-0',
+          isNative
+            ? 'bg-cyan-500/15 text-cyan-400'
+            : 'bg-zinc-700/50 text-zinc-500'
+        )}>
+          {isNative ? '⚡ Native' : '🌐 Gateway'}
+        </span>
+
+        {/* Mode toggle */}
+        <button
+          onClick={() => onUpdate(agent.id, {
+            runtimeMode: isNative ? 'gateway' : 'native',
+          })}
+          disabled={!!saving}
+          className={cn(
+            'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0',
+            isNative ? 'bg-cyan-600' : 'bg-zinc-700'
+          )}
+          title={isNative ? 'Switch to Gateway mode' : 'Switch to Native mode'}
+        >
+          <span
+            className={cn(
+              'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+              isNative ? 'translate-x-[18px]' : 'translate-x-[2px]'
+            )}
+          />
+        </button>
+
+        {isSaving && <Loader2 className="w-3 h-3 animate-spin text-cyan-400 shrink-0" />}
+      </div>
+
+      {/* Row 2: Provider + Model (shown when native) */}
+      {isNative && (
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {/* Primary provider */}
+          <div>
+            <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Provider</label>
+            <select
+              value={agent.providerPrimary || ''}
+              onChange={(e) => onUpdate(agent.id, { providerPrimary: e.target.value || null })}
+              disabled={!!saving}
+              className="w-full bg-zinc-800/80 border border-border/40 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-cyan-500/50 transition-colors"
+            >
+              <option value="">Select provider…</option>
+              {PROVIDER_OPTIONS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Primary model */}
+          <div>
+            <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Model</label>
+            <input
+              type="text"
+              value={agent.modelPrimary || ''}
+              onChange={(e) => onUpdate(agent.id, { modelPrimary: e.target.value || null })}
+              disabled={!!saving}
+              placeholder="e.g. gemini-2.5-flash"
+              list={`models-${agent.id}`}
+              className="w-full bg-zinc-800/80 border border-border/40 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-cyan-500/50 placeholder:text-zinc-600 font-mono transition-colors"
+            />
+            <datalist id={`models-${agent.id}`}>
+              {(MODEL_SUGGESTIONS[agent.providerPrimary || ''] || []).map(m => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </div>
+
+          {/* Fallback provider */}
+          <div>
+            <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Fallback Provider</label>
+            <select
+              value={agent.providerFallback || ''}
+              onChange={(e) => onUpdate(agent.id, { providerFallback: e.target.value || null })}
+              disabled={!!saving}
+              className="w-full bg-zinc-800/80 border border-border/40 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-cyan-500/50 transition-colors"
+            >
+              <option value="">None</option>
+              {PROVIDER_OPTIONS.filter(p => p.value !== agent.providerPrimary).map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Fallback model */}
+          <div>
+            <label className="text-[10px] text-zinc-500 uppercase tracking-wider block mb-1">Fallback Model</label>
+            <input
+              type="text"
+              value={agent.modelFallback || ''}
+              onChange={(e) => onUpdate(agent.id, { modelFallback: e.target.value || null })}
+              disabled={!!saving}
+              placeholder="optional"
+              list={`fallback-models-${agent.id}`}
+              className="w-full bg-zinc-800/80 border border-border/40 rounded px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:border-cyan-500/50 placeholder:text-zinc-600 font-mono transition-colors"
+            />
+            <datalist id={`fallback-models-${agent.id}`}>
+              {(MODEL_SUGGESTIONS[agent.providerFallback || ''] || []).map(m => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentRuntimeConfig({
+  agents,
+  onUpdate,
+  saving,
+}: {
+  agents: AgentRuntimeInfo[];
+  onUpdate: (agentId: string, updates: Partial<AgentRuntimeInfo>) => void;
+  saving: string | null;
+}) {
+  if (agents.length === 0) {
+    return <p className="text-xs text-zinc-600 italic py-2">No agents found</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {agents.map(agent => (
+        <AgentRuntimeCard
+          key={agent.id}
+          agent={agent}
+          onUpdate={onUpdate}
+          saving={saving}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Section: Rebuild Control
 // ---------------------------------------------------------------------------
 
@@ -919,18 +1113,26 @@ export function SettingsPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [expandedSection, setExpandedSection] = useState<string[]>(['orchestrator', 'schedules', 'integrations']);
+  const [expandedSection, setExpandedSection] = useState<string[]>(['orchestrator', 'schedules', 'integrations', 'runtime']);
+
+  // Agent runtime config state
+  const [runtimeAgents, setRuntimeAgents] = useState<AgentRuntimeInfo[]>([]);
+  const [runtimeSaving, setRuntimeSaving] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [hbRes, cronRes] = await Promise.all([
+      const [hbRes, cronRes, rtRes] = await Promise.all([
         fetch('/api/heartbeat/status'),
         fetch('/api/cron-jobs'),
+        fetch('/api/agents/runtime'),
       ]);
       if (hbRes.ok) setData(await hbRes.json());
       if (cronRes.ok) {
         const cronData = await cronRes.json();
         setCronJobs(cronData.jobs || []);
+      }
+      if (rtRes.ok) {
+        setRuntimeAgents(await rtRes.json());
       }
     } catch (e) {
       console.error('Settings fetch error:', e);
@@ -1078,6 +1280,42 @@ export function SettingsPage({
     }
   };
 
+  // --- Runtime config save (debounced per-agent) ---
+  const runtimeDebounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const updateRuntime = useCallback((agentId: string, updates: Partial<AgentRuntimeInfo>) => {
+    // Optimistically update local state
+    setRuntimeAgents(prev => prev.map(a =>
+      a.id === agentId ? { ...a, ...updates } : a
+    ));
+
+    // Debounce API call (300ms for text inputs, immediate for toggles/selects)
+    const isTextChange = 'modelPrimary' in updates || 'modelFallback' in updates;
+    const delay = isTextChange ? 600 : 0;
+
+    if (runtimeDebounceRef.current[agentId]) {
+      clearTimeout(runtimeDebounceRef.current[agentId]);
+    }
+
+    runtimeDebounceRef.current[agentId] = setTimeout(async () => {
+      setRuntimeSaving(agentId);
+      try {
+        await fetch('/api/agents/runtime', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId, ...updates }),
+        });
+        // Refresh data after save
+        const res = await fetch('/api/agents/runtime');
+        if (res.ok) setRuntimeAgents(await res.json());
+      } catch (e) {
+        console.error('Failed to update runtime config:', e);
+      } finally {
+        setRuntimeSaving(null);
+      }
+    }, delay);
+  }, []);
+
   // Deconfliction data
   const deconfliction = useMemo(
     () => computeDeconfliction(data?.schedules || [], data?.config?.staggerDelayMs || 30_000),
@@ -1200,6 +1438,43 @@ export function SettingsPage({
               }}
               onSave={(updates) => saveConfig(updates as Partial<OrchestratorConfig>)}
               saving={saving}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ============ AGENT RUNTIME CONFIG ============ */}
+      <div className="glass-card overflow-hidden">
+        <button
+          onClick={() => toggleSection('runtime')}
+          className="w-full flex items-center gap-3 px-5 py-3 text-left"
+        >
+          <Cpu className="w-4 h-4 text-cyan-400" />
+          <span className="text-sm font-semibold text-zinc-200 flex-1">Agent Runtime</span>
+          <div className="flex items-center gap-2 mr-2">
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400 font-medium">
+              {runtimeAgents.filter(a => a.runtimeMode === 'native').length} native
+            </span>
+            <span className="text-[10px] text-zinc-600">
+              {runtimeAgents.length} agents
+            </span>
+          </div>
+          <ChevronDown
+            className={cn('w-4 h-4 text-zinc-500 transition-transform',
+              expandedSection.includes('runtime') && 'rotate-180'
+            )}
+          />
+        </button>
+
+        {expandedSection.includes('runtime') && (
+          <div className="px-5 pb-5 border-t border-border/30 pt-4">
+            <p className="text-[10px] text-zinc-500 mb-3">
+              Switch agents between <span className="text-zinc-400">Gateway</span> (OpenClaw) and <span className="text-cyan-400">Native</span> (MC built-in) runtime. Native agents run directly in MC with your own API keys.
+            </p>
+            <AgentRuntimeConfig
+              agents={runtimeAgents}
+              onUpdate={updateRuntime}
+              saving={runtimeSaving}
             />
           </div>
         )}

@@ -13,6 +13,7 @@
  * 6. Recalculates nextRunAt for each processed schedule
  */
 
+
 import { buildHeartbeatContext } from '@/lib/build-heartbeat-context';
 import { getNextCronRun } from '@/lib/orchestrator';
 import { prisma } from '@/lib/prisma';
@@ -72,7 +73,18 @@ export async function executeTick(): Promise<TickSummary> {
     },
     orderBy: { priority: 'desc' },
     include: {
-      agent: { select: { id: true, role: true, workspacePath: true } },
+      agent: {
+        select: {
+          id: true,
+          role: true,
+          workspacePath: true,
+          runtimeMode: true,
+          providerPrimary: true,
+          modelPrimary: true,
+          providerFallback: true,
+          modelFallback: true,
+        },
+      },
     },
   });
 
@@ -114,10 +126,61 @@ export async function executeTick(): Promise<TickSummary> {
     let wakeStatus: 'ok' | 'error' | 'dry-run' = 'dry-run';
     let wakeError: string | undefined;
 
-    // 5. Wake the agent via OpenClaw hooks endpoint
-    if (gatewayUrl && hooksToken) {
+    // 5. Build context for the agent
+    const contextMessage = await buildHeartbeatContext(schedule.agent.id, schedule.name);
+
+    // 5a. NATIVE MODE: Run agent loop directly in MC
+    if (schedule.agent.runtimeMode === 'native') {
+      if (!schedule.agent.providerPrimary || !schedule.agent.modelPrimary) {
+        wakeStatus = 'error';
+        wakeError = 'Native mode agent missing provider/model configuration';
+      } else {
+        try {
+          // Dynamic import from specific file to avoid webpack bundling the entire agent-runtime barrel
+          const { runAgentLoop } = await import('@/lib/agent-runtime/agent-loop');
+          const sessionId = crypto.randomUUID();
+          const agentConfig = {
+            agentId: schedule.agent.id,
+            workspacePath: schedule.agent.workspacePath,
+            providerPrimary: schedule.agent.providerPrimary,
+            modelPrimary: schedule.agent.modelPrimary,
+            providerFallback: schedule.agent.providerFallback || undefined,
+            modelFallback: schedule.agent.modelFallback || undefined,
+          };
+
+          console.log(`[Orchestrator] Running native agent: ${schedule.agent.id}`);
+          const result = await runAgentLoop(agentConfig, contextMessage, sessionId);
+
+          // Track session in DB
+          await prisma.agentSession.create({
+            data: {
+              id: sessionId,
+              agentId: schedule.agent.id,
+              status: result.ok ? 'completed' : 'failed',
+              tokensSent: result.tokensSent,
+              tokensRecv: result.tokensRecv,
+              toolCalls: result.toolCalls,
+              iterations: result.iterations,
+              provider: result.provider,
+              model: result.model,
+              triggerType: 'heartbeat',
+              summary: result.response?.slice(0, 500) || null,
+              error: result.error || null,
+              completedAt: new Date(),
+            },
+          });
+
+          wakeStatus = result.ok ? 'ok' : 'error';
+          wakeError = result.error;
+        } catch (e) {
+          wakeStatus = 'error';
+          wakeError = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
+    // 5b. GATEWAY MODE: Wake via OpenClaw hooks endpoint (existing behavior)
+    else if (gatewayUrl && hooksToken) {
       try {
-        const contextMessage = await buildHeartbeatContext(schedule.agent.id, schedule.name);
         const response = await fetch(`${gatewayUrl}/hooks/agent`, {
           method: 'POST',
           headers: {
