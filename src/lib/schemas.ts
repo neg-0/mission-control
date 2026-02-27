@@ -368,6 +368,108 @@ export const UpdateIdeaSchema = z.object({
 export type UpdateIdeaInput = z.infer<typeof UpdateIdeaSchema>;
 
 // =============================================================================
+// CARPLAY
+// =============================================================================
+
+/** Valid CarPlay alert severity levels (P0 = driving interrupt, P1 = quiet, P2 = badge) */
+export const CARPLAY_ALERT_SEVERITIES = [0, 1, 2] as const;
+
+/** Valid CarPlay alert source types */
+export const CARPLAY_ALERT_TYPES = ['ci', 'prod', 'outreach', 'security', 'stripe', 'fleet', 'pr'] as const;
+
+/** Allowlisted CarPlay remote actions */
+export const CARPLAY_ACTIONS = ['pause_outreach', 'resume_outreach', 'kick_rocket'] as const;
+
+/** Valid CarPlay message sources */
+export const CARPLAY_SOURCES = ['carplay', 'siri'] as const;
+
+/**
+ * Schema for acknowledging a CarPlay alert.
+ *
+ * @example
+ * ```json
+ * { "alertId": "a1b2c3d4-e5f6-..." }
+ * ```
+ */
+export const AckAlertSchema = z.object({
+  /** The CarPlayAlert UUID to acknowledge */
+  alertId: z.string().uuid('alertId must be a valid UUID'),
+});
+
+export type AckAlertInput = z.infer<typeof AckAlertSchema>;
+
+/**
+ * Schema for performing a car-safe action.
+ *
+ * Actions are allowlisted to prevent misuse on the remote surface:
+ * - `pause_outreach` — disable outreach schedules
+ * - `resume_outreach` — re-enable outreach schedules
+ * - `kick_rocket` — wake Rocket for an immediate action
+ *
+ * @example
+ * ```json
+ * { "action": "kick_rocket", "context": "Check CompIQ deploy" }
+ * ```
+ */
+export const CarPlayActionSchema = z.object({
+  /** The action to perform (must be in the allowlist) */
+  action: z.enum(CARPLAY_ACTIONS, {
+    error: `action must be one of: ${CARPLAY_ACTIONS.join(', ')}`,
+  }),
+  /** Optional context for the action (e.g., message to Rocket on kick) */
+  context: z.string().max(500).optional(),
+});
+
+export type CarPlayActionInput = z.infer<typeof CarPlayActionSchema>;
+
+/**
+ * Schema for sending a message to Rocket via CarPlay/Siri.
+ *
+ * The backend will request a two-output response from Rocket:
+ * `[CARPLAY]` digest (≤480 chars) + `[FULL]` detailed response.
+ *
+ * @example
+ * ```json
+ * { "text": "What's the status of CompIQ?", "source": "siri" }
+ * ```
+ */
+export const CarPlayMessageSchema = z.object({
+  /** The dictated message text */
+  text: z.string().min(1, 'text is required').max(2000),
+  /** Where the message originated */
+  source: z.enum(CARPLAY_SOURCES, {
+    error: `source must be one of: ${CARPLAY_SOURCES.join(', ')}`,
+  }),
+});
+
+export type CarPlayMessageInput = z.infer<typeof CarPlayMessageSchema>;
+
+/**
+ * Schema for initial device pairing (POST /api/carplay/auth).
+ *
+ * The device sends its unique identifier and a shared secret.
+ * On success, it receives an access + refresh token pair.
+ */
+export const CarPlayAuthSchema = z.object({
+  /** SHA256 of the device's unique identifier */
+  deviceId: z.string().min(1, 'deviceId is required'),
+  /** Shared secret (must match CARPLAY_DEVICE_SECRET env var) */
+  secret: z.string().min(1, 'secret is required'),
+});
+
+export type CarPlayAuthInput = z.infer<typeof CarPlayAuthSchema>;
+
+/**
+ * Schema for refreshing an expired access token.
+ */
+export const CarPlayRefreshSchema = z.object({
+  /** The refresh token issued during pairing */
+  refreshToken: z.string().min(1, 'refreshToken is required'),
+});
+
+export type CarPlayRefreshInput = z.infer<typeof CarPlayRefreshSchema>;
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 

@@ -487,3 +487,59 @@ model KnowledgeEntry {
   @@index([projectId, category])
   @@index([agentId, createdAt])
 }
+
+// -----------------------------------------------------------------------------
+// CarPlay: Materialized Alert View (P0/P1/P2 priority system)
+// -----------------------------------------------------------------------------
+
+model CarPlayAlert {
+  id              String    @id @default(uuid())
+  severity        Int       // 0 = P0 (driving interrupt), 1 = P1 (quiet notify), 2 = P2 (badge only)
+  type            String    // "ci", "prod", "outreach", "security", "stripe", "fleet", "pr"
+  title           String
+  detail          String?
+  dedupeKey       String    @unique // e.g. "ci:main:blocked", "escalation:{id}"
+  triggeredAt     DateTime  @default(now())
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?   // "dustin" or "carplay"
+  repeatCount     Int       @default(1)
+  promotedFrom    Int?      // Original severity before auto-promotion
+  sourceId        String?   // FK reference to Escalation.id, PR number, etc.
+  sourceType      String?   // "escalation", "pr", "pipeline", "agent", "metric"
+  resolved        Boolean   @default(false)
+  resolvedAt      DateTime?
+
+  @@index([severity, triggeredAt])
+  @@index([resolved, severity])
+}
+
+// -----------------------------------------------------------------------------
+// CarPlay: Device Authentication Tokens
+// -----------------------------------------------------------------------------
+
+model DeviceToken {
+  id               String    @id @default(uuid())
+  deviceId         String    @unique // SHA256 hash of device identifier
+  tokenHash        String    // HMAC-SHA256 hash of the access token
+  refreshTokenHash String    // HMAC-SHA256 hash of the refresh token
+  expiresAt        DateTime
+  lastUsedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  @@index([deviceId])
+}
+
+// -----------------------------------------------------------------------------
+// CarPlay: Action Audit Log
+// -----------------------------------------------------------------------------
+
+model CarPlayAuditLog {
+  id        String   @id @default(uuid())
+  action    String   // "ack_alert", "pause_outreach", "resume_outreach", "kick_rocket", "send_message"
+  payload   Json?
+  deviceId  String
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, createdAt])
+}
