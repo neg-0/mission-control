@@ -20,6 +20,6 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (e) {
     console.error('[CarPlay Home]', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

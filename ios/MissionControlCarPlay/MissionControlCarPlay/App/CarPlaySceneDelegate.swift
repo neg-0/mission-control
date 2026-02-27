@@ -39,11 +39,12 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         Task {
             do {
                 let home = try await APIClient.shared.fetchHome()
+                templateManager?.updateHome(home)
                 let template = HomeTemplate.build(from: home, delegate: self)
                 interfaceController?.setRootTemplate(template, animated: true, completion: nil)
                 startBackgroundRefresh()
             } catch {
-                showError("Failed to load: \(error.localizedDescription)")
+                showError("Unable to load dashboard. Please check your connection.")
             }
         }
     }
@@ -58,6 +59,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private func refreshHome() {
         Task {
             guard let home = try? await APIClient.shared.fetchHome() else { return }
+            templateManager?.updateHome(home)
             let template = HomeTemplate.build(from: home, delegate: self)
             interfaceController?.setRootTemplate(template, animated: false, completion: nil)
         }

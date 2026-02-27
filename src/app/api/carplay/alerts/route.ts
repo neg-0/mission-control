@@ -54,6 +54,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (e) {
     console.error('[CarPlay Alerts]', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

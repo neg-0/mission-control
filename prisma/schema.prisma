@@ -520,8 +520,8 @@ model CarPlayAlert {
 model DeviceToken {
   id               String    @id @default(uuid())
   deviceId         String    @unique // SHA256 hash of device identifier
-  tokenHash        String    // bcrypt hash of access token secret
-  refreshTokenHash String    // bcrypt hash of refresh token
+  tokenHash        String    // HMAC-SHA256 hash of the access token
+  refreshTokenHash String    // HMAC-SHA256 hash of the refresh token
   expiresAt        DateTime
   lastUsedAt       DateTime  @default(now())
   createdAt        DateTime  @default(now())

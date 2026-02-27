@@ -65,6 +65,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(tokens, { status: 201 });
   } catch (e) {
     console.error('[CarPlay Auth]', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

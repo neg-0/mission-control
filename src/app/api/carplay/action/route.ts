@@ -24,7 +24,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(formatZodError(result.error), { status: 400 });
     }
 
-    const { action, context } = result.data;
+    const { action, context: rawContext } = result.data;
+    // Sanitize user-supplied context before forwarding to agent
+    const context = rawContext
+      ?.replace(/\b(ignore (previous|above|all) instructions?|you are now|system prompt|new instructions?|override|forget (everything|your|all))\b/gi, '[filtered]')
+      ?.slice(0, 500)
+      ?.trim();
     let actionResult: unknown;
 
     switch (action) {
@@ -111,6 +116,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ action, result: actionResult });
   } catch (e) {
     console.error('[CarPlay Action]', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

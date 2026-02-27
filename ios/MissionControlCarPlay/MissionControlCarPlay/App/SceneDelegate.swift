@@ -28,30 +28,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     private func handleDeepLink(_ url: URL) {
-        // missioncontrol://project/compiq → open web MC
-        // missioncontrol://alerts → open web MC alerts
-        // missioncontrol://fleet → open web MC fleet view
-        guard url.scheme == "missioncontrol" else { return }
-
-        let baseURL = AuthManager.shared.baseURL ?? "https://mc.neg0.cloud"
-        var webPath = "/"
-
-        switch url.host {
-        case "project":
-            if let projectId = url.pathComponents.dropFirst().first {
-                webPath = "/projects/\(projectId)"
-            }
-        case "alerts":
-            webPath = "/alerts"
-        case "fleet":
-            webPath = "/"
-        default:
-            break
-        }
-
-        // Open in Safari
-        if let webURL = URL(string: "\(baseURL)\(webPath)") {
-            UIApplication.shared.open(webURL)
-        }
+        guard let webURL = DeepLinkRouter.resolve(url) else { return }
+        UIApplication.shared.open(webURL)
     }
 }

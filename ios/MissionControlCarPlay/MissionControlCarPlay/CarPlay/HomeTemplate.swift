@@ -81,9 +81,8 @@ enum HomeTemplate {
 
         case .mrrGauge:
             let mrr = data.mrrGauge
-            let formatted = formatCurrency(mrr.current)
             return (
-                formatted,
+                Formatters.currency(mrr.current),
                 systemImage("chart.line.uptrend.xyaxis")
             )
         }
@@ -93,12 +92,5 @@ enum HomeTemplate {
 
     private static func systemImage(_ name: String) -> UIImage {
         UIImage(systemName: name) ?? UIImage()
-    }
-
-    private static func formatCurrency(_ value: Double) -> String {
-        if value >= 1000 {
-            return "$\(String(format: "%.1f", value / 1000))k"
-        }
-        return "$\(Int(value))"
     }
 }

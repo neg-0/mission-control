@@ -178,8 +178,15 @@ class TemplateManager {
     private func acknowledgeAlert(id: String) {
         Task {
             try? await APIClient.shared.ackAlert(id: id)
-            // Refresh alert list after ack
-            showAlerts()
+            // Refresh alert list — pop current then push updated to avoid stacking
+            let alerts = (try? await APIClient.shared.fetchAlerts()) ?? []
+            let template = AlertsTemplate.build(from: alerts) { [weak self] alertId in
+                self?.acknowledgeAlert(id: alertId)
+            }
+            await MainActor.run {
+                interfaceController.popTemplate(animated: false, completion: nil)
+                push(template)
+            }
         }
     }
 

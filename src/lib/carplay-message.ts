@@ -30,6 +30,29 @@ interface ParsedResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Input Sanitization
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize user input before forwarding to the Rocket agent.
+ * Strips common prompt injection patterns while preserving legitimate queries.
+ */
+function sanitizeInput(text: string): string {
+  let sanitized = text;
+
+  // Strip system prompt override attempts
+  sanitized = sanitized.replace(
+    /\b(ignore (previous|above|all) instructions?|you are now|system prompt|new instructions?|override|forget (everything|your|all))\b/gi,
+    '[filtered]'
+  );
+
+  // Trim to max length (already validated by Zod, but defense-in-depth)
+  sanitized = sanitized.slice(0, 2000).trim();
+
+  return sanitized;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -41,10 +64,11 @@ export async function sendToRocket(
   text: string,
   source: 'carplay' | 'siri'
 ): Promise<SendResult> {
+  const sanitizedText = sanitizeInput(text);
   const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL;
   const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN;
 
-  // Log outbound message
+  // Log outbound message (store original text for audit, send sanitized)
   const outbound = await prisma.messageLog.create({
     data: {
       fromId: source,
@@ -87,7 +111,7 @@ export async function sendToRocket(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        text,
+        text: sanitizedText,
         mode: 'now',
         metadata: {
           source,

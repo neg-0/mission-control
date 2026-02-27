@@ -41,11 +41,7 @@ struct FleetStatusIntent: AppIntent {
             }
 
             // MRR
-            let mrr = home.mrrGauge
-            let formatted = mrr.current >= 1000
-                ? "$\(String(format: "%.1f", mrr.current / 1000))k MRR"
-                : "$\(Int(mrr.current)) MRR"
-            parts.append(formatted)
+            parts.append(Formatters.mrrSpeakable(home.mrrGauge.current))
 
             let summary = parts.joined(separator: ". ") + "."
             return .result(dialog: IntentDialog(stringLiteral: summary))
