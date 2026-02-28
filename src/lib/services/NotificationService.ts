@@ -1,39 +1,40 @@
-import axios from 'axios';
-
 /**
- * NotificationService (P5 SaaS Middleman)
- * Centralized service to capture and route agent events to external webhooks (Slack, Discord, Custom).
+ * NotificationService (P5 SaaS Middleman - Refined)
+ * Uses native fetch and basic URL validation to prevent SSRF.
  */
 export class NotificationService {
-  /**
-   * Sends a notification to a Slack Webhook URL.
-   */
-  static async sendSlackNotification(webhookUrl: string, message: string, agentId?: string) {
+  private static isValidUrl(url: string): boolean {
     try {
-      const payload = {
-        text: `🚀 *Mission Control Update* 🚀\n*Agent:* ${agentId || 'System'}\n*Status:* ${message}`,
-        icon_emoji: ':robot_face:',
-      };
-      await axios.post(webhookUrl, payload);
-      return { success: true };
-    } catch (error) {
-      console.error('[NotificationService] Slack Fail:', error);
-      return { success: false, error };
+      const parsed = new URL(url);
+      // Basic SSRF protection: only allow http/https and block local IPs
+      return (
+        (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+        !['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname)
+      );
+    } catch {
+      return false;
     }
   }
 
-  /**
-   * Generic Webhook Dispatcher (For Rocket.chat or Custom Listeners)
-   */
-  static async triggerWebhook(url: string, data: any) {
+  static async sendSlackNotification(webhookUrl: string, message: string, agentId?: string) {
+    if (!this.isValidUrl(webhookUrl)) {
+      return { success: false, error: 'Invalid or restricted URL' };
+    }
+
     try {
-      await axios.post(url, {
-        timestamp: new Date().toISOString(),
-        ...data
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: `🚀 *Mission Control Update*\n*Agent:* ${agentId || 'System'}\n*Status:* ${message}`,
+          icon_emoji: ':robot_face:',
+        }),
       });
-      return { success: true };
-    } catch (error) {
-      return { success: false, error };
+
+      return { success: response.ok };
+    } catch (e) {
+      console.error('[NotificationService] Slack delivery failed');
+      return { success: false }; // Don't leak raw error objects
     }
   }
 }
