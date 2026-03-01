@@ -1,0 +1,545 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Core Entities: The Fleet
+// -----------------------------------------------------------------------------
+
+model Agent {
+  id              String   @id // e.g., "rocket", "captain"
+  role            String   // e.g., "COO", "ShipLog CEO"
+  workspacePath   String   // e.g., "/home/neg0/.openclaw/workspace-rocket"
+  status          String   // "active", "paused", "spawned"
+  port            Int?     // Assigned internal port
+  lastHeartbeat   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Native runtime config
+  runtimeMode     String   @default("gateway") // "gateway" (OpenClaw) | "native" (MC runtime)
+  providerPrimary String?  // "openai", "gemini", "anthropic"
+  modelPrimary    String?  // "gpt-5.2-codex", "gemini-3-flash", etc.
+  providerFallback String? // Fallback provider
+  modelFallback   String?  // Fallback model
+
+  projects        Project[]
+  goals           Goal[]
+  metrics         Metric[]
+  reports         Report[]
+  schedules       Schedule[]
+  sessions        AgentSession[]
+}
+
+// -----------------------------------------------------------------------------
+// Ideas: The Lab (Research & Validation)
+// -----------------------------------------------------------------------------
+
+model Idea {
+  id          String   @id // e.g. "IDEA-005"
+  title       String
+  description String?  // High-level pitch
+  source      String?  // "BigIdeasDB", "Reddit"
+  sourceUrls  String[] // Links to pain point sources (Reddit threads, HN posts, etc.)
+  status      String   @default("draft") // "draft", "refining", "building_lp", "validating", "validated", "review_failed", "graduated", "killed"
+  
+  // Refinery State
+  stage       String   @default("pain_audit") // "pain_audit", "copy_draft", "outreach"
+  
+  // Link to Project (if graduated)
+  projectId   String?  @unique
+  project     Project? @relation(fields: [projectId], references: [id])
+  
+  // Scoring
+  score       Float?   // Aggregate 0-100
+  scorecards  Scorecard[]
+  
+  researchNotes String? // Full analysis text
+  
+  // Validation Sprint ("The Arena")
+  validationStartedAt DateTime?
+  validationDeadline  DateTime?
+  validationTarget    Int?      @default(10) // e.g., 10 signups to pass
+
+  // Agent-populated data
+  refineryData       Json?  // { painPoints: [], avatars: [], copyVariants: [] }
+  validationMetrics  Json?  // { signups: 12, traffic: 150, conversion: "8%" }
+
+  // Waitlist signups (deduped by email)
+  waitlistSignups WaitlistSignup[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WaitlistSignup {
+  id        String   @id @default(uuid())
+  ideaId    String
+  idea      Idea     @relation(fields: [ideaId], references: [id])
+  email     String
+  source    String?  // "reddit", "twitter", "organic", "tally", "typeform"
+  metadata  Json?    // Extra fields from form provider
+  createdAt DateTime @default(now())
+
+  @@unique([ideaId, email]) // Dedup: same email can't sign up twice for same idea
+}
+
+model Scorecard {
+  id          String @id @default(uuid())
+  ideaId      String
+  idea        Idea   @relation(fields: [ideaId], references: [id])
+  
+  category    String // "Pain Level", "Market Demand"
+  score       Int    // 1-10
+  rationale   String?
+  
+  createdAt   DateTime @default(now())
+}
+
+// -----------------------------------------------------------------------------
+// Projects: The Factory (Execution)
+// -----------------------------------------------------------------------------
+
+model Project {
+  id              String   @id // e.g., "IDEA-006" (legacy ID) or "shiplog"
+  name            String   // e.g., "Chocks"
+  stage           String   // "backlog", "research", "building", "beta", "launched"
+  score           Float?   // Legacy score (migrated to Idea)
+  description     String?  // BLUF or "The Pitch"
+  techStack       Json?    // Array of strings or object
+  features        Json?    // Planned features list
+  
+  // Link back to Idea
+  idea            Idea?
+  
+  ownerAgentId    String?
+  ownerAgent      Agent?   @relation(fields: [ownerAgentId], references: [id])
+  
+  repoUrl         String?
+  deployedUrl     String?
+  
+  // Infrastructure Constraints
+  dbProvider      String?  // "supabase", "railway", "none"
+  dbActive        Boolean  @default(false) // Tracks active slot usage
+
+  // Railway Integration (for automated project token generation)
+  railwayProjectId     String?  // Railway project UUID
+  railwayEnvironmentId String?  // Railway environment UUID (usually "production")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  infraResources  InfraResource[]
+  tasks           Task[]
+  pipelines       Pipeline[]
+  checkpoints     Checkpoint[]
+  goals           Goal[]
+}
+
+// -----------------------------------------------------------------------------
+// Goals: Strategic Objectives
+// -----------------------------------------------------------------------------
+
+model Goal {
+  id              String   @id // e.g., "G-001"
+  title           String
+  status          String   // "queued", "in_progress", "complete", "blocked"
+  progress        Int      @default(0) // 0-100%
+  ownerAgentId    String?
+  ownerAgent      Agent?   @relation(fields: [ownerAgentId], references: [id])
+  
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id])
+  
+  tasks           Task[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+}
+
+// -----------------------------------------------------------------------------
+// Tasks: Persistent Action Items
+// -----------------------------------------------------------------------------
+
+model Task {
+  id              String   @id @default(uuid())
+  title           String
+  status          String   @default("todo") // "todo", "in_progress", "review", "done", "blocked"
+  priority        String   @default("medium") // "low", "medium", "high", "critical"
+  taskType        String   @default("one_off") // "one_off" | "standing"
+  
+  description     String?
+  
+  // Polymorphic Assignee: Agent.id or User.handle
+  assigneeId      String?
+  assigneeType    String   @default("agent") // "agent" | "user"
+  
+  // Relationships (Optional)
+  goalId          String?
+  goal            Goal?    @relation(fields: [goalId], references: [id])
+  
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id])
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+}
+
+// -----------------------------------------------------------------------------
+// Metrics: Deterministic Stats (Quantitative)
+// -----------------------------------------------------------------------------
+
+model Metric {
+  id              String   @id @default(uuid())
+  agentId         String
+  agent           Agent    @relation(fields: [agentId], references: [id])
+  type            String   // "mrr", "users", "burn_rate", "tasks_completed"
+  value           Float
+  recordedAt      DateTime @default(now())
+
+  @@index([agentId, type, recordedAt])
+}
+
+// -----------------------------------------------------------------------------
+// Cost Ledger: Hybrid tracking (Manual entries + auto-gathered)
+// -----------------------------------------------------------------------------
+
+model CostEntry {
+  id              String   @id @default(uuid())
+  date            DateTime @default(now())   // Which month/period this cost applies to
+  service         String                      // "Hetzner VPS", "Railway Postgres", "GitHub Pro"
+  amount          Float                       // Monthly cost in USD
+  category        String   @default("infra")  // "infra", "ai", "tools", "saas", "other"
+  notes           String?                     // "Server srv1313394", "Free tier", etc.
+  source          String   @default("manual") // "manual", "auto:github", "auto:stats"
+  recurring       Boolean  @default(true)     // Is this a fixed monthly cost?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@unique([service, date])  // One entry per service per month
+}
+
+// -----------------------------------------------------------------------------
+// Reports: Daily Standups (Qualitative)
+// -----------------------------------------------------------------------------
+
+model Report {
+  id              String   @id @default(uuid())
+  agentId         String
+  agent           Agent    @relation(fields: [agentId], references: [id])
+  
+  date            DateTime @default(now()) // Logical date of report
+  focus           String?  // "Building MVP"
+  blockers        String?  // "Supabase limit reached"
+  mood            String?  // "Optimistic", "Frustrated"
+  
+  rawContent      String?  // Full markdown content
+  
+  createdAt       DateTime @default(now())
+}
+
+// -----------------------------------------------------------------------------
+// Infrastructure: Inventory Management
+// -----------------------------------------------------------------------------
+
+model InfraResource {
+  id              String   @id @default(uuid())
+  type            String   // "supabase_project", "railway_service", "vercel_deployment"
+  name            String   // e.g., "Supabase Free Tier Slot 1"
+  status          String   // "available", "claimed", "maintenance"
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id])
+  
+  meta            Json?    // Store connection strings (encrypted?) or config details
+  updatedAt       DateTime @updatedAt @default(now())
+}
+
+// -----------------------------------------------------------------------------
+// C2: Users (Humans in the System)
+// -----------------------------------------------------------------------------
+
+model User {
+  id              String   @id @default(uuid())
+  name            String   // "Dustin"
+  handle          String   @unique // "dustin"
+  role            String   @default("admin") // "admin", "operator"
+  createdAt       DateTime @default(now())
+}
+
+// -----------------------------------------------------------------------------
+// C2: Scheduling (Rate-Limited Agent Waking)
+// -----------------------------------------------------------------------------
+
+model Schedule {
+  id              String    @id @default(uuid())
+  agentId         String
+  agent           Agent     @relation(fields: [agentId], references: [id])
+  type            String    @default("cron") // "heartbeat" or "cron"
+  name            String    // "Heartbeat", "Work Session", "Standup"
+  cronExpr        String?   // Cron expression OR...
+  intervalMs      Int?      // ...interval in ms (not both)
+  enabled         Boolean   @default(true)
+  priority        Int       @default(0) // Higher = wake first in queue
+  payload         String?   // Message to send when triggered
+  channel         String    @default("discord") // Delivery channel ("discord", "none", etc.)
+  deliverTo       String?   // Delivery target within channel (e.g. "user:339585248826228749")
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([enabled, nextRunAt])
+  @@index([type])
+}
+
+model OrchestratorConfig {
+  id              String   @id @default("singleton")
+  maxWakesPerTick Int      @default(2)
+  minIntervalMs   Int      @default(60000)  // 60s between wakes
+  staggerDelayMs  Int      @default(30000)  // 30s gap between consecutive agent wakes within a tick
+  tickIntervalMs  Int      @default(60000)  // 60s — how often the internal timer fires
+  tpmLimit        Int?     // Tokens per minute limit (user-configurable)
+  quotaResetHours Float    @default(5.0)    // Quota reset window in hours
+  journalEntries  Int      @default(5)      // How many recent journal entries to include in wake context
+  mdInjections    Json?    // Array of markdown file paths to inject into wake context, e.g. ["/path/to/PLAYBOOK.md"]
+  enabled         Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+}
+
+// -----------------------------------------------------------------------------
+// C2: Communication Tracking
+// -----------------------------------------------------------------------------
+
+model MessageLog {
+  id              String   @id @default(uuid())
+  fromId          String   // Agent ID, "dustin", or "system"
+  toId            String   // Agent ID, "dustin", or "broadcast"
+  channel         String   // "sessions_send", "message", "broadcast", "kick", "schedule", "escalation"
+  subject         String?
+  body            String
+  status          String   @default("sent") // "sent", "delivered", "ack", "failed"
+  metadata        Json?
+  sentAt          DateTime @default(now())
+
+  @@index([fromId, sentAt])
+  @@index([toId, sentAt])
+  @@index([channel, sentAt])
+}
+
+// -----------------------------------------------------------------------------
+// C2: SDLC Pipelines & Quality Gates
+// -----------------------------------------------------------------------------
+
+model Pipeline {
+  id              String         @id @default(uuid())
+  projectId       String
+  project         Project        @relation(fields: [projectId], references: [id])
+  stage           String         // "development", "staging", "production"
+  status          String         @default("pending") // "pending", "passing", "failing", "blocked"
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  gates           PipelineGate[]
+
+  @@index([projectId, stage])
+}
+
+model PipelineGate {
+  id              String    @id @default(uuid())
+  pipelineId      String
+  pipeline        Pipeline  @relation(fields: [pipelineId], references: [id])
+  name            String    // "lint", "typecheck", "unit_tests", "security", "red_team", "pre_ship"
+  order           Int       // Execution order
+  severity        String    @default("hard") // "hard" = blocking, "soft" = advisory
+  status          String    @default("pending") // "pending", "passing", "failing", "skipped"
+  required        Boolean   @default(true)
+  output          String?   // Command output / error logs
+  checkedAt       DateTime?
+  checkedBy       String?   // Agent ID that ran the check
+
+  @@index([pipelineId, order])
+}
+
+// -----------------------------------------------------------------------------
+// Lifecycle: Project Checkpoints
+// -----------------------------------------------------------------------------
+
+model Checkpoint {
+  id            String   @id @default(uuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id])
+  
+  phase         String   // "idea", "ship", "live", "scale"
+  key           String   // "research_brief", "dead_ui_scan", "human_review"
+  label         String   // "No dead-end UI elements"
+  order         Int
+  
+  status        String   @default("pending") // "pending", "pass", "fail", "blocked", "skipped"
+  automated     Boolean  @default(false)     // Can the system auto-resolve?
+  humanRequired Boolean  @default(false)     // Needs Dustin?
+  
+  // QC results
+  output        String?  // JSON: scan results, findings, auto-fix log
+  resolvedAt    DateTime?
+  resolvedBy    String?  // "system", "dustin", agent ID
+  note          String?  // Why it was skipped/failed
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([projectId, key])
+  @@index([projectId, phase])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// C2: Escalation Protocol
+// -----------------------------------------------------------------------------
+
+model Escalation {
+  id              String    @id @default(uuid())
+  fromAgentId     String
+  severity        String    // "warning", "critical", "blocker"
+  category        String    // "budget", "security", "architecture", "production", "merge"
+  title           String
+  description     String?
+  status          String    @default("open") // "open", "ack", "resolved", "dismissed"
+  resolvedBy      String?   // "dustin" or agent ID
+  resolution      String?
+  createdAt       DateTime  @default(now())
+  resolvedAt      DateTime?
+
+  @@index([status, severity])
+}
+
+// -----------------------------------------------------------------------------
+// C2: Agent Journal (Persistent Memory Across Isolated Sessions)
+// -----------------------------------------------------------------------------
+
+model AgentJournal {
+  id          String   @id @default(uuid())
+  agentId     String
+  did         String   // What was accomplished this heartbeat
+  next        String?  // What the agent intends to do next
+  status      String   @default("healthy") // "healthy" | "blocked" | "idle" | "error"
+  blockers    String?  // What's preventing progress
+  metadata    Json?    // Optional structured data (PR numbers, task IDs, etc.)
+  createdAt   DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Native Runtime: Agent Sessions (Execution Tracking)
+// -----------------------------------------------------------------------------
+
+model AgentSession {
+  id          String    @id @default(uuid())
+  agentId     String
+  agent       Agent     @relation(fields: [agentId], references: [id])
+  status      String    @default("active") // "active", "completed", "failed", "timeout"
+  tokensSent  Int       @default(0)
+  tokensRecv  Int       @default(0)
+  toolCalls   Int       @default(0)
+  iterations  Int       @default(0)
+  provider    String?   // Provider used: "openai", "gemini", "anthropic"
+  model       String?   // Model used: "gpt-5.2-codex", etc.
+  triggerType String?   // "heartbeat", "delegation", "manual"
+  summary     String?   // Brief summary of what was accomplished
+  error       String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([agentId, startedAt])
+  @@index([status])
+}
+
+// -----------------------------------------------------------------------------
+// Native Runtime: Semantic Memory (Shared Knowledge)
+// -----------------------------------------------------------------------------
+
+model KnowledgeEntry {
+  id          String   @id @default(uuid())
+  projectId   String?  // Null = global knowledge, set = project-scoped
+  agentId     String   // Which agent created this knowledge
+  category    String   @default("learned") // "learned", "fact", "decision", "blocker", "lesson"
+  content     String   // The knowledge content
+  embedding   Bytes?   // Float32 vector stored as binary (for vector search)
+  source      String?  // "reflection", "compaction", "manual", "delegation"
+  expiresAt   DateTime? // Optional TTL for transient knowledge
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, category])
+  @@index([agentId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// CarPlay: Materialized Alert View (P0/P1/P2 priority system)
+// -----------------------------------------------------------------------------
+
+model CarPlayAlert {
+  id              String    @id @default(uuid())
+  severity        Int       // 0 = P0 (driving interrupt), 1 = P1 (quiet notify), 2 = P2 (badge only)
+  type            String    // "ci", "prod", "outreach", "security", "stripe", "fleet", "pr"
+  title           String
+  detail          String?
+  dedupeKey       String    @unique // e.g. "ci:main:blocked", "escalation:{id}"
+  triggeredAt     DateTime  @default(now())
+  acknowledgedAt  DateTime?
+  acknowledgedBy  String?   // "dustin" or "carplay"
+  repeatCount     Int       @default(1)
+  promotedFrom    Int?      // Original severity before auto-promotion
+  sourceId        String?   // FK reference to Escalation.id, PR number, etc.
+  sourceType      String?   // "escalation", "pr", "pipeline", "agent", "metric"
+  resolved        Boolean   @default(false)
+  resolvedAt      DateTime?
+
+  @@index([severity, triggeredAt])
+  @@index([resolved, severity])
+}
+
+// -----------------------------------------------------------------------------
+// CarPlay: Device Authentication Tokens
+// -----------------------------------------------------------------------------
+
+model DeviceToken {
+  id               String    @id @default(uuid())
+  deviceId         String    @unique // SHA256 hash of device identifier
+  tokenHash        String    // HMAC-SHA256 hash of the access token
+  refreshTokenHash String    // HMAC-SHA256 hash of the refresh token
+  expiresAt        DateTime
+  lastUsedAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  revokedAt        DateTime?
+
+  @@index([deviceId])
+}
+
+// -----------------------------------------------------------------------------
+// CarPlay: Action Audit Log
+// -----------------------------------------------------------------------------
+
+model CarPlayAuditLog {
+  id        String   @id @default(uuid())
+  action    String   // "ack_alert", "pause_outreach", "resume_outreach", "kick_rocket", "send_message"
+  payload   Json?
+  deviceId  String
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, createdAt])
+}
