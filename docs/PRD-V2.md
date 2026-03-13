@@ -1,7 +1,12 @@
 # PRD: Mission Control V2 (The War Room)
 
 ## 0. Addendums
+- [**PRD V3 — The Autonomous War Room**](PRD-V3.md) (supersedes this document for v1.0 scope)
 - [CarPlay + Siri cockpit PRD](carplay-prd.md)
+- [User Stories](USER-STORIES.md)
+- [Definition of Done](DEFINITION-OF-DONE.md)
+- [Roadmap](ROADMAP.md)
+- [E2E Testing Strategy](E2E-TESTING-STRATEGY.md)
 
 ## 1. Vision & Strategy
 **The "War Room"** is not just an observability tool—it is the **Command & Control** center for the AI Army.
