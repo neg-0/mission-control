@@ -175,6 +175,96 @@ async function main() {
     skipDuplicates: true
   })
 
+  // 5. Seed Fleet Authority Roles
+  console.log('Seeding Fleet Authority Roles...')
+
+  const roles = [
+    {
+      name: 'ceo',
+      scope: 'project',
+      singleton: false,
+      capabilities: {
+        deploy: 'execute',
+        code_write: 'execute',
+        schema: 'execute',
+        credentials: 'read_only',
+        purchase: 'request_only',
+        bash_exec: 'execute',
+        file_write: 'execute',
+      },
+      boundaries: null,
+      description: 'Project CEO — full autonomy within their project scope',
+    },
+    {
+      name: 'organizer',
+      scope: 'fleet',
+      singleton: false,
+      capabilities: {
+        credentials: 'admin',
+        deploy: 'none',
+        code_write: 'none',
+        purchase: 'request_only',
+        delegation: 'execute',
+      },
+      boundaries: null,
+      description: 'Fleet organizer — manages credentials and coordinates agents',
+    },
+    {
+      name: 'purchasing',
+      scope: 'fleet',
+      singleton: true,
+      capabilities: {
+        purchase: 'execute',
+        deploy: 'none',
+        code_write: 'none',
+        credentials: 'none',
+      },
+      boundaries: null,
+      description: 'Purchasing agent — singleton, handles all procurement',
+    },
+    {
+      name: 'frontend-dev',
+      scope: 'project',
+      singleton: false,
+      capabilities: {
+        deploy: 'request_only',
+        code_write: 'execute',
+        schema: 'none',
+        bash_exec: 'execute',
+        file_write: 'execute',
+      },
+      boundaries: {
+        forbiddenDirs: ['prisma/', 'src/lib/agent-runtime/', '.env'],
+      },
+      description: 'Frontend developer — can write code but not DB schema or runtime',
+    },
+    {
+      name: 'qa',
+      scope: 'project',
+      singleton: false,
+      capabilities: {
+        deploy: 'none',
+        code_write: 'execute',
+        schema: 'none',
+        bash_exec: 'execute',
+        file_write: 'execute',
+      },
+      boundaries: {
+        allowedDirs: ['src/__tests__/', 'e2e/', 'tests/'],
+      },
+      description: 'QA agent — can write tests but not production code',
+    },
+  ]
+
+  for (const role of roles) {
+    await prisma.role.upsert({
+      where: { name: role.name },
+      update: { ...role },
+      create: { ...role },
+    })
+    console.log(`  Seeded Role: ${role.name}`)
+  }
+
   console.log('✅ Seed complete.')
 }
 

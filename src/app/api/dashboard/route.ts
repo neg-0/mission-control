@@ -124,6 +124,18 @@ export async function GET() {
         health = diff < 86400000 ? 'green' : 'yellow';
       }
 
+      // Load agent roles for authority display
+      let agentRoles: Array<{ name: string; scope: string }> = [];
+      try {
+        const roles = await prisma.agentRole.findMany({
+          where: { agentId: agent.id },
+          include: { role: { select: { name: true, scope: true } } },
+        });
+        agentRoles = roles.map(r => ({ name: r.role.name, scope: r.role.scope }));
+      } catch {
+        // Non-fatal
+      }
+
       // Calculate drift score for non-offline agents
       let driftScore: number | null = null;
       let driftSignals: string[] = [];
@@ -155,6 +167,7 @@ export async function GET() {
         has_stats: !!latestJournal || !!agent.lastHeartbeat || agent.metrics.length > 0 || !!lastReport || !!agentStats,
         driftScore,
         driftSignals,
+        agentRoles,
       };
     }));
 

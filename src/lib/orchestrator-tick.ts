@@ -168,6 +168,18 @@ export async function executeTick(): Promise<TickSummary> {
       console.warn(`[Orchestrator] Drift check failed for ${schedule.agent.id}:`, driftErr);
     }
 
+    // 4b. Authority check — log agents without roles (backward compat, no blocking)
+    try {
+      const agentRoleCount = await prisma.agentRole.count({
+        where: { agentId: schedule.agent.id },
+      });
+      if (agentRoleCount === 0) {
+        console.log(`[Orchestrator] Agent ${schedule.agent.id} has no roles assigned (backward compat — proceeding)`);
+      }
+    } catch (authErr) {
+      console.warn(`[Orchestrator] Authority check failed for ${schedule.agent.id}:`, authErr);
+    }
+
     let wakeStatus: 'ok' | 'error' | 'dry-run' = 'dry-run';
     let wakeError: string | undefined;
 
