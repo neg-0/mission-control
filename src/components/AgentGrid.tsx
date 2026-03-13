@@ -11,6 +11,8 @@ interface AgentInfo {
   role?: string;
   status?: string;
   last_updated?: string | null;
+  driftScore?: number | null;
+  driftSignals?: string[];
 }
 
 interface GoalSummary {
@@ -39,6 +41,22 @@ const healthLabel: Record<string, string> = {
   red: 'Offline',
   gray: 'No Signal',
 };
+
+function getDriftColor(score: number | null | undefined): string | null {
+  if (score == null || score === 0) return null;
+  if (score <= 30) return 'bg-emerald-400';
+  if (score <= 50) return 'bg-yellow-400';
+  if (score <= 80) return 'bg-orange-400';
+  return 'bg-red-500';
+}
+
+function getDriftLabel(score: number | null | undefined): string {
+  if (score == null || score === 0) return '';
+  if (score <= 30) return 'Healthy';
+  if (score <= 50) return 'Warning';
+  if (score <= 80) return 'Elevated';
+  return 'Auto-Paused';
+}
 
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
@@ -123,6 +141,14 @@ export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
                 agent.health === 'red' && 'bg-red-500',
                 agent.health === 'gray' && 'bg-zinc-500',
               )} />
+              {/* Drift indicator dot (top-left, only shown when drift > 0) */}
+              {agent.driftScore != null && agent.driftScore > 0 && (
+                <div className={cn(
+                  'absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full',
+                  getDriftColor(agent.driftScore),
+                  agent.driftScore > 80 && 'led-pulse',
+                )} />
+              )}
             </button>
 
             {/* Tooltip on hover */}
@@ -159,6 +185,32 @@ export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
                   </>
                 ) : (
                   <div className="text-[11px] text-muted-foreground italic">No goals assigned</div>
+                )}
+
+                {agent.driftScore != null && agent.driftScore > 0 && (
+                  <div className="space-y-1 pt-1 border-t border-border/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground">Drift Score</span>
+                      <span className={cn(
+                        'text-[10px] font-mono font-semibold',
+                        agent.driftScore <= 30 && 'text-emerald-400',
+                        agent.driftScore > 30 && agent.driftScore <= 50 && 'text-yellow-400',
+                        agent.driftScore > 50 && agent.driftScore <= 80 && 'text-orange-400',
+                        agent.driftScore > 80 && 'text-red-400',
+                      )}>
+                        {agent.driftScore}/100 {getDriftLabel(agent.driftScore)}
+                      </span>
+                    </div>
+                    {agent.driftSignals && agent.driftSignals.length > 0 && (
+                      <div className="space-y-0.5">
+                        {agent.driftSignals.map((signal, idx) => (
+                          <div key={idx} className="text-[9px] text-orange-300/80">
+                            {signal}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {agent.last_updated && (

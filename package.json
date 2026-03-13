@@ -9,7 +9,7 @@
     "lint": "next lint",
     "test": "jest",
     "test:unit": "jest --selectProjects unit",
-    "test:api": "jest --selectProjects api",
+    "test:api": "jest --selectProjects api --runInBand",
     "test:watch": "jest --watch",
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",

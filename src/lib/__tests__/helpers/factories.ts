@@ -148,3 +148,48 @@ export async function createTestCarPlayAlert(overrides: Record<string, unknown> 
     },
   });
 }
+
+// ── AgentSession ──────────────────────────────────────────────────────
+
+export async function createTestAgentSession(agentId: string, overrides: Record<string, unknown> = {}) {
+  return testPrisma.agentSession.create({
+    data: {
+      agentId,
+      status: 'completed',
+      tokensSent: 1000,
+      tokensRecv: 500,
+      toolCalls: 5,
+      iterations: 3,
+      triggerType: 'heartbeat',
+      ...overrides,
+    },
+  });
+}
+
+// ── AgentJournal ──────────────────────────────────────────────────────
+
+export async function createTestJournal(agentId: string, overrides: Record<string, unknown> = {}) {
+  return testPrisma.agentJournal.create({
+    data: {
+      agentId,
+      did: 'Test work completed',
+      next: 'Continue testing',
+      status: 'healthy',
+      ...overrides,
+    },
+  });
+}
+
+// ── RecoveryLog ───────────────────────────────────────────────────────
+
+export async function createTestRecoveryLog(agentId: string, overrides: Record<string, unknown> = {}) {
+  return testPrisma.recoveryLog.create({
+    data: {
+      agentId,
+      trigger: 'consecutive_failures',
+      action: 'cooldown_retry',
+      outcome: 'success',
+      ...overrides,
+    },
+  });
+}

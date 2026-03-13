@@ -543,3 +543,19 @@ model CarPlayAuditLog {
 
   @@index([deviceId, createdAt])
 }
+
+// -----------------------------------------------------------------------------
+// Drift Prevention: Recovery Action Log
+// -----------------------------------------------------------------------------
+
+model RecoveryLog {
+  id        String   @id @default(uuid())
+  agentId   String
+  trigger   String   // "consecutive_failures", "missed_heartbeat", "token_burn", "drift_threshold"
+  action    String   // "auto_pause", "schedule_reset", "cooldown_retry"
+  outcome   String   // "success", "failed", "skipped"
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}

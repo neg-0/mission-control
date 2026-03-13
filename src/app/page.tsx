@@ -53,7 +53,7 @@ interface DashboardData {
   updated_at: string;
   global: { mrr_total: number; burn_rate_est: number; active_agents: number; active_projects: number; total_users: number; total_fleet: number };
   pipeline: Array<{ id: string; name: string; bluf: string; score: number; status: string; stage?: string; nextStep?: string; url: string | null; validationDeadline?: string | null; validationTarget?: number | null; validationMetrics?: { signups?: number; traffic?: number; conversion?: string } | null; timeRemaining?: number | null; isExpired?: boolean; scorecards?: Array<{ category: string; score: number }>; sourceUrls?: string[] }>;
-  fleet: Array<{ id: string; name: string; emoji: string; health: 'green' | 'yellow' | 'red' | 'gray'; status: string; last_report: string; mrr: number; users: number; traffic: number; cost: number; checklist_progress: number; last_updated: string | null; has_stats: boolean }>;
+  fleet: Array<{ id: string; name: string; emoji: string; health: 'green' | 'yellow' | 'red' | 'gray'; status: string; last_report: string; mrr: number; users: number; traffic: number; cost: number; checklist_progress: number; last_updated: string | null; has_stats: boolean; driftScore?: number | null; driftSignals?: string[] }>;
   goals: Array<{ id: string; name: string; status: string; owner: string }>;
   milestones: Array<{ label: string; mrr: number; status: string }>;
   blockers: Array<{ agentId: string; agentName: string; emoji: string; blocker: string }>;
