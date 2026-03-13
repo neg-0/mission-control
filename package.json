@@ -8,7 +8,13 @@
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
+    "test:unit": "jest --selectProjects unit",
+    "test:api": "jest --selectProjects api",
     "test:watch": "jest --watch",
+    "test:e2e": "npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:setup-db": "bash scripts/setup-test-db.sh",
+    "test:all": "npm run test:api && npm run test:unit; npm run test:e2e",
     "rebuild": "bash rebuild.sh"
   },
   "dependencies": {
@@ -34,6 +40,7 @@
   },
   "devDependencies": {
     "@jest/types": "^30.2.0",
+    "@playwright/test": "^1.58.2",
     "@types/jest": "^30.0.0",
     "@types/node": "20.19.31",
     "@types/react": "^18.3.27",
@@ -41,6 +48,7 @@
     "@typescript-eslint/eslint-plugin": "^8.55.0",
     "@typescript-eslint/parser": "^8.55.0",
     "autoprefixer": "^10.4.24",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.5",
     "jest": "^30.2.0",

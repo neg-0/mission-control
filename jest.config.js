@@ -1,10 +1,35 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  roots: ['<rootDir>/src'],
-  testMatch: ['**/__tests__/**/*.test.ts'],
-  moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-  },
+  projects: [
+    // ── Unit Tests ──────────────────────────────────────────────────────
+    // Existing pure-function tests. No database, no setup files.
+    // Run with: npm run test:unit
+    {
+      displayName: 'unit',
+      preset: 'ts-jest',
+      testEnvironment: 'node',
+      roots: ['<rootDir>/src'],
+      testMatch: ['**/__tests__/**/*.test.ts'],
+      testPathIgnorePatterns: ['__tests__/api/'],
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+    },
+
+    // ── API Integration Tests ──────────────────────────────────────────
+    // Tests that import route handlers and hit the test database.
+    // Requires: test DB running (npm run test:setup-db)
+    // Run with: npm run test:api
+    {
+      displayName: 'api',
+      preset: 'ts-jest',
+      testEnvironment: 'node',
+      roots: ['<rootDir>/src'],
+      testMatch: ['**/__tests__/api/**/*.test.ts'],
+      moduleNameMapper: {
+        '^@/(.*)$': '<rootDir>/src/$1',
+      },
+      setupFiles: ['<rootDir>/src/lib/__tests__/helpers/jest-api-setup.ts'],
+    },
+  ],
 };
