@@ -90,14 +90,15 @@ describe('parseCronField', () => {
 
 describe('getNextCronRun', () => {
   test('every minute (* * * * *) returns next minute', () => {
-    const after = new Date('2026-02-12T14:30:00Z');
+    // Use local-time constructor — getNextCronRun uses local getHours/getMinutes
+    const after = new Date(2026, 1, 12, 14, 30, 0);
     const next = getNextCronRun('* * * * *', after);
     expect(next.getMinutes()).toBe(31);
-    expect(next.getHours()).toBe(after.getHours());
+    expect(next.getHours()).toBe(14);
   });
 
   test('specific minute and hour (30 9 * * *)', () => {
-    const after = new Date('2026-02-12T08:00:00Z');
+    const after = new Date(2026, 1, 12, 8, 0, 0);
     const next = getNextCronRun('30 9 * * *', after);
     expect(next.getHours()).toBe(9);
     expect(next.getMinutes()).toBe(30);
@@ -105,7 +106,7 @@ describe('getNextCronRun', () => {
   });
 
   test('specific minute and hour already passed → next day', () => {
-    const after = new Date('2026-02-12T10:00:00Z');
+    const after = new Date(2026, 1, 12, 10, 0, 0);
     const next = getNextCronRun('30 9 * * *', after);
     expect(next.getHours()).toBe(9);
     expect(next.getMinutes()).toBe(30);
@@ -113,7 +114,7 @@ describe('getNextCronRun', () => {
   });
 
   test('midnight rollover (0 0 * * *)', () => {
-    const after = new Date('2026-02-12T23:59:00Z');
+    const after = new Date(2026, 1, 12, 23, 59, 0);
     const next = getNextCronRun('0 0 * * *', after);
     expect(next.getHours()).toBe(0);
     expect(next.getMinutes()).toBe(0);
@@ -121,7 +122,7 @@ describe('getNextCronRun', () => {
   });
 
   test('every 2 hours (0 */2 * * *)', () => {
-    const after = new Date('2026-02-12T15:30:00Z');
+    const after = new Date(2026, 1, 12, 15, 30, 0);
     const next = getNextCronRun('0 */2 * * *', after);
     expect(next.getHours()).toBe(16);
     expect(next.getMinutes()).toBe(0);
@@ -129,7 +130,7 @@ describe('getNextCronRun', () => {
 
   test('weekday filter (30 9 * * 1-5) skips weekends', () => {
     // Saturday Feb 14, 2026 → should skip to Monday Feb 16
-    const saturday = new Date('2026-02-14T10:00:00Z');
+    const saturday = new Date(2026, 1, 14, 10, 0, 0);
     const next = getNextCronRun('30 9 * * 1-5', saturday);
     expect(next.getDay()).toBeGreaterThanOrEqual(1);
     expect(next.getDay()).toBeLessThanOrEqual(5);
@@ -147,34 +148,34 @@ describe('getNextCronRun', () => {
   });
 
   test('step minutes (*/15 * * * *)', () => {
-    const after = new Date('2026-02-12T14:01:00Z');
+    const after = new Date(2026, 1, 12, 14, 1, 0);
     const next = getNextCronRun('*/15 * * * *', after);
     expect(next.getMinutes()).toBe(15);
     expect(next.getHours()).toBe(14);
   });
 
   test('comma-separated minutes (0,30 * * * *)', () => {
-    const after = new Date('2026-02-12T14:05:00Z');
+    const after = new Date(2026, 1, 12, 14, 5, 0);
     const next = getNextCronRun('0,30 * * * *', after);
     expect(next.getMinutes()).toBe(30);
     expect(next.getHours()).toBe(14);
   });
 
   test('invalid expression (too few fields) falls back to 1 hour', () => {
-    const after = new Date('2026-02-12T14:00:00Z');
+    const after = new Date(2026, 1, 12, 14, 0, 0);
     const next = getNextCronRun('bad cron', after);
     const expectedMs = after.getTime() + 3600000;
     expect(next.getTime()).toBe(expectedMs);
   });
 
   test('empty expression falls back to 1 hour', () => {
-    const after = new Date('2026-02-12T14:00:00Z');
+    const after = new Date(2026, 1, 12, 14, 0, 0);
     const next = getNextCronRun('', after);
     expect(next.getTime()).toBe(after.getTime() + 3600000);
   });
 
   test('next run is always strictly after the reference time', () => {
-    const after = new Date('2026-02-12T14:30:00Z');
+    const after = new Date(2026, 1, 12, 14, 30, 0);
     const next = getNextCronRun('30 14 * * *', after);
     // Should be tomorrow at 14:30, not today (since we're AT 14:30)
     expect(next.getTime()).toBeGreaterThan(after.getTime());
@@ -182,7 +183,7 @@ describe('getNextCronRun', () => {
 
   test('Sunday filter (0 10 * * 0)', () => {
     // Feb 12, 2026 is Thursday → next Sunday is Feb 15
-    const thursday = new Date('2026-02-12T11:00:00Z');
+    const thursday = new Date(2026, 1, 12, 11, 0, 0);
     const next = getNextCronRun('0 10 * * 0', thursday);
     expect(next.getDay()).toBe(0); // Sunday
     expect(next.getHours()).toBe(10);
