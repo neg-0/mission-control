@@ -132,8 +132,9 @@ export async function GET() {
           include: { role: { select: { name: true, scope: true } } },
         });
         agentRoles = roles.map(r => ({ name: r.role.name, scope: r.role.scope }));
-      } catch {
-        // Non-fatal
+      } catch (e) {
+        // Non-fatal, but log for observability
+        console.warn(`Failed to load roles for agent ${agent.id}:`, e);
       }
 
       // Calculate drift score for non-offline agents
@@ -144,8 +145,9 @@ export async function GET() {
           const drift = await calculateDriftScore(agent.id);
           driftScore = drift.score;
           driftSignals = drift.signals;
-        } catch {
+        } catch (e) {
           // Drift calculation failure is non-fatal
+          console.warn(`Drift calculation failed for agent ${agent.id}:`, e);
         }
       }
 

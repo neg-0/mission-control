@@ -187,8 +187,9 @@ export async function recoverFailedSessions(
             details: { reason: 'cooldown_active', lastRecoveryId: recentRecovery.id },
           },
         });
-      } catch {
-        // Best-effort escalation
+      } catch (err) {
+        // Best-effort escalation, but log the failure
+        console.warn(`[DriftRecovery] Failed to create critical escalation for agent ${agent.id}:`, err);
       }
 
       results.push({

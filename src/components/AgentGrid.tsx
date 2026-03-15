@@ -58,6 +58,14 @@ function getDriftLabel(score: number | null | undefined): string {
   return 'Auto-Paused';
 }
 
+function getDriftTextColor(score: number | null | undefined): string {
+  if (score == null) return '';
+  if (score <= 30) return 'text-emerald-400';
+  if (score <= 50) return 'text-yellow-400';
+  if (score <= 80) return 'text-orange-400';
+  return 'text-red-400';
+}
+
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts;
   if (diff < 60000) return 'just now';
@@ -193,10 +201,7 @@ export function AgentGrid({ agents, onSelectAgent }: AgentGridProps) {
                       <span className="text-[10px] text-muted-foreground">Drift Score</span>
                       <span className={cn(
                         'text-[10px] font-mono font-semibold',
-                        agent.driftScore <= 30 && 'text-emerald-400',
-                        agent.driftScore > 30 && agent.driftScore <= 50 && 'text-yellow-400',
-                        agent.driftScore > 50 && agent.driftScore <= 80 && 'text-orange-400',
-                        agent.driftScore > 80 && 'text-red-400',
+                        getDriftTextColor(agent.driftScore),
                       )}>
                         {agent.driftScore}/100 {getDriftLabel(agent.driftScore)}
                       </span>
