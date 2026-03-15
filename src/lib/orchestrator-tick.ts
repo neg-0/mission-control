@@ -15,8 +15,11 @@
 
 
 import { buildHeartbeatContext } from '@/lib/build-heartbeat-context';
+import { checkAgentBudget } from '@/lib/budget-breaker';
 import { calculateDriftScore } from '@/lib/drift-score';
 import { recoverMissedHeartbeats, recoverFailedSessions } from '@/lib/drift-recovery';
+import { checkGatewayHealth, queueAction } from '@/lib/gateway-health';
+import { detectMissedTicks } from '@/lib/missed-tick';
 import { getNextCronRun } from '@/lib/orchestrator';
 import { prisma } from '@/lib/prisma';
 
@@ -65,6 +68,28 @@ export async function executeTick(): Promise<TickSummary> {
   }
 
   const now = new Date();
+
+  // 1b. Missed tick detection — check if we're behind and need catch-up
+  try {
+    const missedTick = await detectMissedTicks();
+    if (missedTick.missedCount > 0) {
+      console.warn(`[Orchestrator] Missed ${missedTick.missedCount} tick(s), catch-up: ${missedTick.catchUpNeeded}`);
+    }
+  } catch (err) {
+    console.warn('[Orchestrator] Missed tick detection failed:', err);
+  }
+
+  // 1c. Gateway health check
+  let gatewayConnected = true;
+  try {
+    const gwStatus = await checkGatewayHealth();
+    gatewayConnected = gwStatus.connected;
+    if (!gwStatus.connected) {
+      console.warn(`[Orchestrator] Gateway disconnected for ${Math.round(gwStatus.disconnectedForMs / 1000)}s, ${gwStatus.queuedActions} actions queued`);
+    }
+  } catch (err) {
+    console.warn('[Orchestrator] Gateway health check failed:', err);
+  }
 
   // 2. Query due HEARTBEAT schedules (enabled + nextRunAt in the past + agent not paused)
   const dueSchedules = await prisma.schedule.findMany({
@@ -168,7 +193,25 @@ export async function executeTick(): Promise<TickSummary> {
       console.warn(`[Orchestrator] Drift check failed for ${schedule.agent.id}:`, driftErr);
     }
 
-    // 4b. Authority check — log agents without roles (backward compat, no blocking)
+    // 4b. Budget check — auto-pause agents over their daily token limit
+    try {
+      const budget = await checkAgentBudget(schedule.agent.id);
+      if (budget.status === 'breaker_tripped') {
+        console.log(`[Orchestrator] Budget breaker tripped for ${schedule.agent.id} — ${budget.dailyTokens} tokens`);
+        results.push({
+          scheduleId: schedule.id,
+          scheduleName: schedule.name,
+          agentId: schedule.agentId,
+          status: 'error',
+          error: `Budget breaker: ${budget.dailyTokens} tokens exceeds limit of ${budget.limit}`,
+        });
+        continue;
+      }
+    } catch (budgetErr) {
+      console.warn(`[Orchestrator] Budget check failed for ${schedule.agent.id}:`, budgetErr);
+    }
+
+    // 4c. Authority check — log agents without roles (backward compat, no blocking)
     try {
       const agentRoleCount = await prisma.agentRole.count({
         where: { agentId: schedule.agent.id },
@@ -237,33 +280,49 @@ export async function executeTick(): Promise<TickSummary> {
     }
     // 5b. GATEWAY MODE: Wake via OpenClaw hooks endpoint (existing behavior)
     else if (gatewayUrl && hooksToken) {
-      try {
-        const response = await fetch(`${gatewayUrl}/hooks/agent`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${hooksToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: contextMessage,
-            name: `MC Heartbeat: ${schedule.name}`,
-            agentId: schedule.agent.id,
-            wakeMode: 'now',
-            deliver: schedule.channel !== 'none',
-            channel: schedule.channel || 'discord',
-            to: schedule.deliverTo || undefined,
-          }),
-        });
-
-        if (response.ok) {
-          wakeStatus = 'ok';
-        } else {
-          wakeStatus = 'error';
-          wakeError = `Gateway returned ${response.status}: ${await response.text()}`;
-        }
-      } catch (e) {
+      // If gateway is disconnected, queue the action for replay
+      if (!gatewayConnected) {
+        const payload = {
+          message: contextMessage,
+          name: `MC Heartbeat: ${schedule.name}`,
+          agentId: schedule.agent.id,
+          wakeMode: 'now',
+          deliver: schedule.channel !== 'none',
+          channel: schedule.channel || 'discord',
+          to: schedule.deliverTo || undefined,
+        };
+        queueAction(payload);
         wakeStatus = 'error';
-        wakeError = e instanceof Error ? e.message : String(e);
+        wakeError = 'Gateway disconnected — action queued for replay';
+      } else {
+        try {
+          const response = await fetch(`${gatewayUrl}/hooks/agent`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${hooksToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: contextMessage,
+              name: `MC Heartbeat: ${schedule.name}`,
+              agentId: schedule.agent.id,
+              wakeMode: 'now',
+              deliver: schedule.channel !== 'none',
+              channel: schedule.channel || 'discord',
+              to: schedule.deliverTo || undefined,
+            }),
+          });
+
+          if (response.ok) {
+            wakeStatus = 'ok';
+          } else {
+            wakeStatus = 'error';
+            wakeError = `Gateway returned ${response.status}: ${await response.text()}`;
+          }
+        } catch (e) {
+          wakeStatus = 'error';
+          wakeError = e instanceof Error ? e.message : String(e);
+        }
       }
     } else {
       console.log(`[Orchestrator] Dry-run wake: ${schedule.agentId} — ${schedule.name}`);

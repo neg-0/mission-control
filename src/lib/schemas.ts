@@ -398,6 +398,28 @@ export const AckAlertSchema = z.object({
 
 export type AckAlertInput = z.infer<typeof AckAlertSchema>;
 
+/** Valid snooze durations (in hours) */
+export const SNOOZE_DURATIONS = [1, 4, 24] as const;
+
+/**
+ * Schema for snoozing a CarPlay alert.
+ *
+ * @example
+ * ```json
+ * { "alertId": "a1b2c3d4-...", "hours": 4 }
+ * ```
+ */
+export const SnoozeAlertSchema = z.object({
+  /** The CarPlayAlert UUID to snooze */
+  alertId: z.string().uuid('alertId must be a valid UUID'),
+  /** Snooze duration in hours (1, 4, or 24) */
+  hours: z.number().refine((v) => [1, 4, 24].includes(v), {
+    message: 'hours must be one of: 1, 4, 24',
+  }),
+});
+
+export type SnoozeAlertInput = z.infer<typeof SnoozeAlertSchema>;
+
 /**
  * Schema for performing a car-safe action.
  *
