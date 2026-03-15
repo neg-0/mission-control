@@ -33,7 +33,9 @@ interface QueuedAction {
   queuedAt: Date;
 }
 
-// In-memory action queue (survives across ticks but not restarts)
+// In-memory action queue — survives across ticks but not process restarts.
+// TODO: For production reliability, persist queue + connection state to Redis or DB
+// so that queued actions survive restarts during gateway outages.
 let actionQueue: QueuedAction[] = [];
 let disconnectedSince: Date | null = null;
 let escalated = false;

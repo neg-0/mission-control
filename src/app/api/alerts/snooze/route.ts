@@ -24,7 +24,9 @@ export async function POST(request: NextRequest) {
     const { alertId, hours } = result.data;
     const durationMs = hours * 60 * 60 * 1000;
 
-    const alert = await snoozeAlert(alertId, durationMs, 'dustin');
+    // TODO: Replace with authenticated user ID when auth is implemented
+    const userId = 'dustin';
+    const alert = await snoozeAlert(alertId, durationMs, userId);
 
     return NextResponse.json({
       ok: true,
@@ -33,6 +35,6 @@ export async function POST(request: NextRequest) {
     });
   } catch (e) {
     console.error('[Snooze POST]', e);
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

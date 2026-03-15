@@ -39,6 +39,7 @@ export function AlertPanel() {
   const [alerts, setAlerts] = useState<CarPlayAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAlerts = useCallback(async () => {
     try {
@@ -63,14 +64,16 @@ export function AlertPanel() {
   const handleAcknowledge = async (alertId: string) => {
     setActionLoading(alertId);
     try {
-      await fetch('/api/carplay/alerts', {
+      const res = await fetch('/api/carplay/alerts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alertId }),
       });
+      if (!res.ok) throw new Error('Failed to acknowledge');
+      setError(null);
       await fetchAlerts();
     } catch {
-      // Silent
+      setError('Failed to acknowledge alert');
     } finally {
       setActionLoading(null);
     }
@@ -79,14 +82,16 @@ export function AlertPanel() {
   const handleSnooze = async (alertId: string, hours: number) => {
     setActionLoading(alertId);
     try {
-      await fetch('/api/alerts/snooze', {
+      const res = await fetch('/api/alerts/snooze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alertId, hours }),
       });
+      if (!res.ok) throw new Error('Failed to snooze');
+      setError(null);
       await fetchAlerts();
     } catch {
-      // Silent
+      setError('Failed to snooze alert');
     } finally {
       setActionLoading(null);
     }
@@ -134,6 +139,12 @@ export function AlertPanel() {
           {visibleAlerts.length} active
         </span>
       </div>
+
+      {error && (
+        <div className="text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
+          {error}
+        </div>
+      )}
 
       {visibleAlerts.length === 0 ? (
         <div className="flex items-center gap-2 text-xs text-emerald-400/80">
@@ -249,12 +260,17 @@ export function TopPriorityCTA() {
 
   const fetchCta = useCallback(async () => {
     try {
-      // Get the top P0 alert, or top P1, or top escalation
-      const res = await fetch('/api/carplay/alerts?resolved=false&severity=0');
-      if (res.ok) {
-        const data = await res.json();
-        const alerts = data.alerts || data || [];
+      // Fetch P0, P1, and escalations in parallel
+      const [p0Res, p1Res, escRes] = await Promise.all([
+        fetch('/api/carplay/alerts?resolved=false&severity=0'),
+        fetch('/api/carplay/alerts?resolved=false&severity=1'),
+        fetch('/api/escalations?status=open'),
+      ]);
 
+      // Check P0 alerts first
+      if (p0Res.ok) {
+        const data = await p0Res.json();
+        const alerts = data.alerts || data || [];
         if (alerts.length > 0) {
           const top = alerts[0];
           setCta({
@@ -268,7 +284,6 @@ export function TopPriorityCTA() {
       }
 
       // Fall back to P1 alerts
-      const p1Res = await fetch('/api/carplay/alerts?resolved=false&severity=1');
       if (p1Res.ok) {
         const p1Data = await p1Res.json();
         const p1Alerts = p1Data.alerts || p1Data || [];
@@ -285,7 +300,6 @@ export function TopPriorityCTA() {
       }
 
       // Fall back to open escalations
-      const escRes = await fetch('/api/escalations?status=open');
       if (escRes.ok) {
         const escalations = await escRes.json();
         if (escalations.length > 0) {
@@ -302,7 +316,7 @@ export function TopPriorityCTA() {
 
       setCta(null);
     } catch {
-      // Silent
+      // Silent — CTA is best-effort UI enhancement
     }
   }, []);
 

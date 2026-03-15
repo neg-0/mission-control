@@ -22,6 +22,8 @@
 import { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from './prisma';
 
+const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
 export interface ResolutionEvent {
   alertId: string;
   dedupeKey: string;
@@ -178,7 +180,7 @@ async function checkAgentResolution(
   // Agent was paused (drift auto-pause) and has been resumed
   if (agent.status === 'active' && condition === 'offline') {
     // Check for recent heartbeat (within last 30 min)
-    const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const thirtyMinAgo = new Date(Date.now() - THIRTY_MINUTES_MS);
     if (agent.lastHeartbeat && agent.lastHeartbeat > thirtyMinAgo) {
       return { reason: `Agent ${agentId} is back online with recent heartbeat` };
     }
