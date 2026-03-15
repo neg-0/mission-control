@@ -16,6 +16,8 @@
  */
 
 import { prisma } from './prisma';
+import { runEscalationLadder } from './alert-escalation';
+import { checkAutoResolutions } from './alert-resolution';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 const THIRTY_MINUTES_MS = 30 * 60 * 1000;
@@ -142,11 +144,14 @@ export async function evaluateAlerts() {
     await upsertAlert(signal);
   }
 
-  // Auto-resolve alerts whose source signal is no longer present
+  // Condition-specific auto-resolution (CI passes, agent recovers, etc.)
+  await checkAutoResolutions();
+
+  // Auto-resolve alerts whose source signal is no longer present (fallback)
   await autoResolveStaleAlerts(signals.map((s) => s.dedupeKey));
 
-  // Auto-promote P1s that are old or repeated
-  await autoPromote();
+  // Full escalation ladder: P2→P1 (2h) and P1→P0 (2h or 3x repeat)
+  await runEscalationLadder();
 
   // Return current alerts
   return prisma.carPlayAlert.findMany({
@@ -204,32 +209,6 @@ async function upsertAlert(input: AlertInput) {
         triggeredAt: new Date(),
       },
     });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Auto-promotion: P1 → P0 if >3 repeats or >2h old
-// ---------------------------------------------------------------------------
-
-async function autoPromote() {
-  const candidates = await prisma.carPlayAlert.findMany({
-    where: {
-      severity: 1,
-      resolved: false,
-    },
-  });
-
-  for (const alert of candidates) {
-    const age = Date.now() - alert.triggeredAt.getTime();
-    if (alert.repeatCount > 3 || age > TWO_HOURS_MS) {
-      await prisma.carPlayAlert.update({
-        where: { id: alert.id },
-        data: {
-          severity: 0,
-          promotedFrom: 1,
-        },
-      });
-    }
   }
 }
 

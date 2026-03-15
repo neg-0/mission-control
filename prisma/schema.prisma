@@ -509,6 +509,8 @@ model CarPlayAlert {
   sourceType      String?   // "escalation", "pr", "pipeline", "agent", "metric"
   resolved        Boolean   @default(false)
   resolvedAt      DateTime?
+  snoozedUntil    DateTime? // Snooze: alert hidden until this time
+  escalatedAt     DateTime? // When the alert was last auto-escalated
 
   @@index([severity, triggeredAt])
   @@index([resolved, severity])
