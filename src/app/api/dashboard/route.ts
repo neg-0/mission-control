@@ -1,4 +1,5 @@
 import { AgentCostSummary, calculateBurnRate } from '@/lib/burn-rate';
+import { calculateDriftScore } from '@/lib/drift-score';
 import { prisma } from '@/lib/prisma';
 import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
@@ -93,7 +94,7 @@ export async function GET() {
     });
     const journalMap = new Map(latestJournals.map(j => [j.agentId, j]));
 
-    const fleet = dbAgents.map(agent => {
+    const fleet = await Promise.all(dbAgents.map(async (agent) => {
       const lastReport = agent.reports[0];
       const agentStats = agentStatsMap[agent.id];
       const latestJournal = journalMap.get(agent.id);
@@ -123,6 +124,33 @@ export async function GET() {
         health = diff < 86400000 ? 'green' : 'yellow';
       }
 
+      // Load agent roles for authority display
+      let agentRoles: Array<{ name: string; scope: string }> = [];
+      try {
+        const roles = await prisma.agentRole.findMany({
+          where: { agentId: agent.id },
+          include: { role: { select: { name: true, scope: true } } },
+        });
+        agentRoles = roles.map(r => ({ name: r.role.name, scope: r.role.scope }));
+      } catch (e) {
+        // Non-fatal, but log for observability
+        console.warn(`Failed to load roles for agent ${agent.id}:`, e);
+      }
+
+      // Calculate drift score for non-offline agents
+      let driftScore: number | null = null;
+      let driftSignals: string[] = [];
+      if (health !== 'gray') {
+        try {
+          const drift = await calculateDriftScore(agent.id);
+          driftScore = drift.score;
+          driftSignals = drift.signals;
+        } catch (e) {
+          // Drift calculation failure is non-fatal
+          console.warn(`Drift calculation failed for agent ${agent.id}:`, e);
+        }
+      }
+
       return {
         id: agent.id,
         name: agent.role || agent.id,
@@ -139,8 +167,11 @@ export async function GET() {
         blocker: latestJournal?.blockers || lastReport?.blockers || null,
         last_updated: latestJournal?.createdAt?.toISOString() || agent.lastHeartbeat?.toISOString() || null,
         has_stats: !!latestJournal || !!agent.lastHeartbeat || agent.metrics.length > 0 || !!lastReport || !!agentStats,
+        driftScore,
+        driftSignals,
+        agentRoles,
       };
-    });
+    }));
 
     // 2. Fetch Ideas (The Lab)
     const dbIdeas = await prisma.idea.findMany({

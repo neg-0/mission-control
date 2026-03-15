@@ -148,3 +148,125 @@ export async function createTestCarPlayAlert(overrides: Record<string, unknown> 
     },
   });
 }
+
+// ── AgentSession ──────────────────────────────────────────────────────
+
+export async function createTestAgentSession(agentId: string, overrides: Record<string, unknown> = {}) {
+  return testPrisma.agentSession.create({
+    data: {
+      agentId,
+      status: 'completed',
+      tokensSent: 1000,
+      tokensRecv: 500,
+      toolCalls: 5,
+      iterations: 3,
+      triggerType: 'heartbeat',
+      ...overrides,
+    },
+  });
+}
+
+// ── AgentJournal ──────────────────────────────────────────────────────
+
+export async function createTestJournal(agentId: string, overrides: Record<string, unknown> = {}) {
+  return testPrisma.agentJournal.create({
+    data: {
+      agentId,
+      did: 'Test work completed',
+      next: 'Continue testing',
+      status: 'healthy',
+      ...overrides,
+    },
+  });
+}
+
+// ── RecoveryLog ───────────────────────────────────────────────────────
+
+export async function createTestRecoveryLog(agentId: string, overrides: Record<string, unknown> = {}) {
+  return testPrisma.recoveryLog.create({
+    data: {
+      agentId,
+      trigger: 'consecutive_failures',
+      action: 'cooldown_retry',
+      outcome: 'success',
+      ...overrides,
+    },
+  });
+}
+
+// ── Role ──────────────────────────────────────────────────────────────
+
+export async function createTestRole(overrides: Record<string, unknown> = {}) {
+  return testPrisma.role.create({
+    data: {
+      name: nextId('test-role'),
+      scope: 'project',
+      capabilities: { deploy: 'execute', code_write: 'execute', schema: 'none' },
+      ...overrides,
+    },
+  });
+}
+
+// ── AgentRole ─────────────────────────────────────────────────────────
+
+export async function createTestAgentRole(
+  agentId: string,
+  roleId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return testPrisma.agentRole.create({
+    data: {
+      agentId,
+      roleId,
+      assignedBy: 'system',
+      ...overrides,
+    },
+  });
+}
+
+// ── ProjectConstraint ─────────────────────────────────────────────────
+
+export async function createTestProjectConstraint(
+  projectId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return testPrisma.projectConstraint.create({
+    data: {
+      projectId,
+      forbiddenOps: ['DROP TABLE', 'rm -rf', 'force push'],
+      allowedDeployCommands: ['railway up', 'vercel deploy'],
+      protectedFiles: ['prisma/schema.prisma', '.env'],
+      ...overrides,
+    },
+  });
+}
+
+// ── CredentialGrant ───────────────────────────────────────────────────
+
+export async function createTestCredentialGrant(overrides: Record<string, unknown> = {}) {
+  return testPrisma.credentialGrant.create({
+    data: {
+      credentialKey: 'railway_token',
+      grantedToAgent: 'test-agent',
+      grantedByAgent: 'rocket',
+      accessLevel: 'read_only',
+      ...overrides,
+    },
+  });
+}
+
+// ── DecisionLog ───────────────────────────────────────────────────────
+
+export async function createTestDecisionLog(overrides: Record<string, unknown> = {}) {
+  return testPrisma.decisionLog.create({
+    data: {
+      entityType: 'project_constraint',
+      entityId: 'test-entity',
+      field: 'forbiddenOps',
+      newValue: ['DROP TABLE'],
+      rationale: 'Prevent accidental data loss',
+      decidedBy: 'dustin',
+      ...overrides,
+    },
+  });
+}

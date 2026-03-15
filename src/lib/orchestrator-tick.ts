@@ -15,6 +15,8 @@
 
 
 import { buildHeartbeatContext } from '@/lib/build-heartbeat-context';
+import { calculateDriftScore } from '@/lib/drift-score';
+import { recoverMissedHeartbeats, recoverFailedSessions } from '@/lib/drift-recovery';
 import { getNextCronRun } from '@/lib/orchestrator';
 import { prisma } from '@/lib/prisma';
 
@@ -64,12 +66,13 @@ export async function executeTick(): Promise<TickSummary> {
 
   const now = new Date();
 
-  // 2. Query due HEARTBEAT schedules (enabled + nextRunAt in the past)
+  // 2. Query due HEARTBEAT schedules (enabled + nextRunAt in the past + agent not paused)
   const dueSchedules = await prisma.schedule.findMany({
     where: {
       type: 'heartbeat',
       enabled: true,
       nextRunAt: { lte: now },
+      agent: { status: { not: 'paused' } },
     },
     orderBy: { priority: 'desc' },
     include: {
@@ -121,6 +124,60 @@ export async function executeTick(): Promise<TickSummary> {
     // Stagger: wait between wakes (skip for first)
     if (i > 0 && staggerMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, staggerMs));
+    }
+
+    // 4a. Drift check — auto-pause agents with score > 80
+    try {
+      const drift = await calculateDriftScore(schedule.agent.id);
+      if (drift.score > 80) {
+        await prisma.agent.update({
+          where: { id: schedule.agent.id },
+          data: { status: 'paused' },
+        });
+        await prisma.escalation.create({
+          data: {
+            fromAgentId: schedule.agent.id,
+            severity: 'critical',
+            category: 'fleet',
+            title: `Auto-paused ${schedule.agent.id}: ${drift.signals.join(', ')}`,
+            description: `Drift score ${drift.score}/100. Agent paused to prevent further damage.`,
+          },
+        });
+        await prisma.recoveryLog.create({
+          data: {
+            agentId: schedule.agent.id,
+            trigger: 'drift_threshold',
+            action: 'auto_pause',
+            outcome: 'success',
+            details: { score: drift.score, signals: drift.signals },
+          },
+        });
+        console.log(`[Orchestrator] Auto-paused ${schedule.agent.id} — drift score ${drift.score}`);
+
+        results.push({
+          scheduleId: schedule.id,
+          scheduleName: schedule.name,
+          agentId: schedule.agentId,
+          status: 'error',
+          error: `Auto-paused: drift score ${drift.score}`,
+        });
+        continue; // Skip wake for this agent
+      }
+    } catch (driftErr) {
+      // Drift check failure is non-fatal — log and continue with wake
+      console.warn(`[Orchestrator] Drift check failed for ${schedule.agent.id}:`, driftErr);
+    }
+
+    // 4b. Authority check — log agents without roles (backward compat, no blocking)
+    try {
+      const agentRoleCount = await prisma.agentRole.count({
+        where: { agentId: schedule.agent.id },
+      });
+      if (agentRoleCount === 0) {
+        console.log(`[Orchestrator] Agent ${schedule.agent.id} has no roles assigned (backward compat — proceeding)`);
+      }
+    } catch (authErr) {
+      console.warn(`[Orchestrator] Authority check failed for ${schedule.agent.id}:`, authErr);
     }
 
     let wakeStatus: 'ok' | 'error' | 'dry-run' = 'dry-run';
@@ -255,6 +312,18 @@ export async function executeTick(): Promise<TickSummary> {
       status: wakeStatus,
       error: wakeError,
     });
+  }
+
+  // 8. Run recovery playbooks (non-fatal — errors are logged, not thrown)
+  try {
+    await recoverMissedHeartbeats();
+  } catch (err) {
+    console.warn('[Orchestrator] Missed heartbeat recovery failed:', err);
+  }
+  try {
+    await recoverFailedSessions();
+  } catch (err) {
+    console.warn('[Orchestrator] Failed session recovery failed:', err);
   }
 
   const processed = results.filter((r) => r.status === 'ok' || r.status === 'dry-run').length;

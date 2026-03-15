@@ -127,14 +127,20 @@ export async function updateEnvVar(
   }
 
   if (!found) {
-    // Ensure there's a trailing newline before appending
-    if (lines.length > 0 && lines[lines.length - 1] !== '') {
-      lines.push('');
+    // Remove phantom empty strings from trailing newlines in the original content
+    while (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
     }
     lines.push(`${key}=${value}`);
   }
 
-  await writeFile(envPath, lines.join('\n'), 'utf-8');
+  // Always ensure trailing newline
+  let result = lines.join('\n');
+  if (!result.endsWith('\n')) {
+    result += '\n';
+  }
+
+  await writeFile(envPath, result, 'utf-8');
 }
 
 // ---------------------------------------------------------------------------

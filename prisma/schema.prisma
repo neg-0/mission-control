@@ -142,6 +142,7 @@ model Project {
   pipelines       Pipeline[]
   checkpoints     Checkpoint[]
   goals           Goal[]
+  constraint      ProjectConstraint?
 }
 
 // -----------------------------------------------------------------------------
@@ -542,4 +543,97 @@ model CarPlayAuditLog {
   createdAt DateTime @default(now())
 
   @@index([deviceId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Drift Prevention: Recovery Action Log
+// -----------------------------------------------------------------------------
+
+model RecoveryLog {
+  id        String   @id @default(uuid())
+  agentId   String
+  trigger   String   // "consecutive_failures", "missed_heartbeat", "token_burn", "drift_threshold"
+  action    String   // "auto_pause", "schedule_reset", "cooldown_retry"
+  outcome   String   // "success", "failed", "skipped"
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([agentId, createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// Fleet Authority: Role-Based Access & Project Constraints
+// -----------------------------------------------------------------------------
+
+model ProjectConstraint {
+  id                    String   @id @default(uuid())
+  projectId             String   @unique
+  project               Project  @relation(fields: [projectId], references: [id])
+  techStack             Json?    // { runtime, framework, database, orm }
+  infrastructure        Json?    // { hosting, deployTargets, ciProvider }
+  protectedFiles        String[] // paths agents must not modify
+  forbiddenOps          String[] // e.g. "DROP TABLE", "rm -rf", "force push"
+  allowedDeployCommands String[] // e.g. "railway up", "vercel deploy"
+  monthlyBudgetUsd      Float?
+  maxCostPerAction      Float?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Role {
+  id           String      @id @default(uuid())
+  name         String      @unique // "ceo", "organizer", "purchasing", "frontend-dev", "qa"
+  scope        String      // "project" | "fleet"
+  singleton    Boolean     @default(false)
+  capabilities Json        // { deploy: "execute"|"request_only"|"none", ... }
+  boundaries   Json?       // { allowedDirs: [], forbiddenDirs: [], forbiddenActions: [] }
+  description  String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  agentRoles   AgentRole[]
+}
+
+model AgentRole {
+  id         String   @id @default(uuid())
+  agentId    String
+  roleId     String
+  role       Role     @relation(fields: [roleId], references: [id])
+  projectId  String?  // null = fleet-scoped assignment
+  assignedBy String   // "system", "dustin", or agent ID
+  createdAt  DateTime @default(now())
+
+  @@unique([agentId, roleId, projectId])
+  @@index([agentId])
+}
+
+model CredentialGrant {
+  id             String    @id @default(uuid())
+  credentialKey  String    // "railway_token", "github_pat", "supabase_key"
+  grantedToAgent String
+  grantedByAgent String
+  projectId      String?   // null = fleet-wide
+  accessLevel    String    // "read_only" | "execute" | "admin"
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([grantedToAgent])
+  @@index([grantedByAgent])
+}
+
+model DecisionLog {
+  id            String   @id @default(uuid())
+  entityType    String   // "project_constraint", "role", "credential_grant", "agent_role"
+  entityId      String
+  field         String   // which field changed
+  previousValue Json?
+  newValue      Json
+  rationale     String
+  alternatives  Json?    // what else was considered
+  decidedBy     String   // "dustin" or agent ID
+  createdAt     DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([decidedBy, createdAt])
 }
