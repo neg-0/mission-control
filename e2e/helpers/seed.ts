@@ -12,7 +12,7 @@ config({ path: path.resolve(__dirname, '../../.env.test') });
 
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 
 /**
  * Truncate all tables and seed minimal data for the War Room to render.
