@@ -192,7 +192,7 @@ async function main() {
         bash_exec: 'execute',
         file_write: 'execute',
       },
-      boundaries: null,
+      boundaries: undefined,
       description: 'Project CEO — full autonomy within their project scope',
     },
     {
@@ -206,7 +206,7 @@ async function main() {
         purchase: 'request_only',
         delegation: 'execute',
       },
-      boundaries: null,
+      boundaries: undefined,
       description: 'Fleet organizer — manages credentials and coordinates agents',
     },
     {
@@ -219,7 +219,7 @@ async function main() {
         code_write: 'none',
         credentials: 'none',
       },
-      boundaries: null,
+      boundaries: undefined,
       description: 'Purchasing agent — singleton, handles all procurement',
     },
     {

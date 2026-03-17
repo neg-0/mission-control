@@ -34,7 +34,14 @@ function ageMs(timestamp?: string): number | null {
   return Date.now() - parsed;
 }
 
-export function computeAlerts(prs: PR[], goals: Goal[], agents: Agent[]): Alert[] {
+export interface FleetAgent {
+  id: string;
+  name: string;
+  health: string;
+  last_report: string;
+}
+
+export function computeAlerts(prs: PR[], goals: Goal[], agents: Agent[], _fleetAgents?: FleetAgent[]): Alert[] {
   const alerts: Alert[] = [];
 
   const hours = (count: number) => count * 60 * 60 * 1000;
