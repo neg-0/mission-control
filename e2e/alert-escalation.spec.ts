@@ -45,8 +45,8 @@ test.describe('Alert Escalation Pipeline', () => {
     expect(found).toBeDefined();
     expect(found.severity).toBe(2); // 'warning' maps to severity 2
 
-    // Acknowledge the alert
-    const ackRes = await request.post('/api/carplay/alerts', {
+    // Acknowledge the alert via the dedicated ack endpoint
+    const ackRes = await request.post('/api/carplay/ack', {
       headers: carPlayHeaders(),
       data: { alertId: found.id },
     });
