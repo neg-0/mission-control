@@ -152,6 +152,13 @@ export const UpdateOrchestratorConfigSchema = z
 export type UpdateOrchestratorConfigInput = z.infer<typeof UpdateOrchestratorConfigSchema>;
 
 // =============================================================================
+// SYSTEM CONSTANTS
+// =============================================================================
+
+/** Default human user ID for system-generated messages and audit logs.
+ *  TODO: Replace with authenticated user lookup when auth is implemented. */
+export const SYSTEM_NOTIFY_USER = 'dustin';
+
 // ESCALATIONS
 // =============================================================================
 

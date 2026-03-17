@@ -45,6 +45,14 @@ test.describe('Orchestrator Tick Cycle', () => {
 
     const body = await response.json();
     expect(body.ok).toBe(true);
+
+    // Verify drift score is reflected in dashboard after tick
+    const dashRes = await request.get('/api/dashboard');
+    const dashboard = await dashRes.json();
+    const rocket = dashboard.fleet?.find((a: { id: string }) => a.id === 'rocket');
+    expect(rocket).toBeDefined();
+    // driftScore should be a number (0+ since agent has a healthy journal)
+    expect(typeof rocket.driftScore).toBe('number');
   });
 
   test('tick handles agents with no sessions gracefully', async ({ request }) => {

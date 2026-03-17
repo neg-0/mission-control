@@ -259,8 +259,11 @@ describe('Ideas API', () => {
   });
 
   // ── GET /api/cron-jobs/refinery-verdict ──────────────────────────────
+  // The cron route now uses processVerdicts() which implements a two-phase
+  // verdict with override window. Phase 1 marks as pending (review_failed),
+  // Phase 2 auto-executes after override window expires.
   describe('GET /api/cron-jobs/refinery-verdict', () => {
-    it('issues PASS verdict when signups meet target', async () => {
+    it('marks expired sprint as pending verdict (Phase 1)', async () => {
       const idea = await createTestIdea({
         status: 'validating',
         validationTarget: 3,
@@ -273,27 +276,31 @@ describe('Ideas API', () => {
         });
       }
 
-      const req = createTestRequest('/api/cron-jobs/refinery-verdict');
       const res = await getVerdict();
-      const { data } = await parseResponse<{ processed: number; results: Array<{ decision: string }> }>(res);
+      const { data } = await parseResponse<{
+        processed: number;
+        results: Array<{ decision: string; autoExecuted: boolean }>;
+      }>(res);
       expect(data.processed).toBe(1);
       expect(data.results[0].decision).toBe('PASS');
+      expect(data.results[0].autoExecuted).toBe(false); // Pending override window
     });
 
-    it('issues FAIL verdict when signups are below threshold', async () => {
+    it('calculates FAIL verdict when signups are below threshold', async () => {
       const idea = await createTestIdea({
         status: 'validating',
         validationTarget: 10,
         validationDeadline: new Date(Date.now() - 1000),
       });
 
-      // Only 1 signup (below 80% of 10 = 8)
       await testPrisma.waitlistSignup.create({
         data: { ideaId: idea.id, email: 'fail@test.com' },
       });
 
       const res = await getVerdict();
-      const { data } = await parseResponse<{ results: Array<{ decision: string }> }>(res);
+      const { data } = await parseResponse<{
+        results: Array<{ decision: string }>;
+      }>(res);
       expect(data.results[0].decision).toBe('FAIL');
     });
 
@@ -306,6 +313,31 @@ describe('Ideas API', () => {
       const res = await getVerdict();
       const { data } = await parseResponse<{ processed: number }>(res);
       expect(data.processed).toBe(0);
+    });
+
+    it('auto-executes PASS verdicts past override window (Phase 2)', async () => {
+      const idea = await createTestIdea({
+        status: 'review_failed',
+        refineryData: {
+          pendingVerdict: 'PASS',
+          verdictSignups: 12,
+          verdictTarget: 10,
+          overrideWindowEndsAt: new Date(Date.now() - 1000).toISOString(),
+          verdictCalculatedAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+        },
+      });
+
+      const res = await getVerdict();
+      const { data } = await parseResponse<{
+        results: Array<{ decision: string; autoExecuted: boolean }>;
+      }>(res);
+      const autoExec = data.results.find(r => r.autoExecuted);
+      expect(autoExec).toBeDefined();
+      expect(autoExec?.decision).toBe('PASS');
+
+      // Verify idea promoted to validated
+      const updated = await testPrisma.idea.findUnique({ where: { id: idea.id } });
+      expect(updated?.status).toBe('validated');
     });
   });
 });

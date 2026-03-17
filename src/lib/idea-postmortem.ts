@@ -15,6 +15,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from './prisma';
+import { SYSTEM_NOTIFY_USER } from './schemas';
 
 export interface PostMortem {
   ideaId: string;
@@ -120,7 +121,7 @@ export async function generatePostMortem(
   await db.messageLog.create({
     data: {
       fromId: 'postmortem-engine',
-      toId: 'dustin',
+      toId: SYSTEM_NOTIFY_USER,
       channel: 'refinery_verdict',
       subject: `Post-mortem: ${idea.title}`,
       body: formatPostMortemSummary(postmortem),

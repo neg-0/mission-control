@@ -15,6 +15,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from './prisma';
+import { SYSTEM_NOTIFY_USER } from './schemas';
 
 const OVERRIDE_WINDOW_MS = 4 * 60 * 60 * 1000; // 4 hours
 
@@ -90,7 +91,7 @@ export async function processVerdicts(
     await db.messageLog.create({
       data: {
         fromId: 'verdict-engine',
-        toId: 'dustin',
+        toId: SYSTEM_NOTIFY_USER,
         channel: 'refinery_verdict',
         subject: `Verdict pending: ${idea.title}`,
         body: `Sprint expired. Signups: ${signups}/${target}. Calculated: ${decision}. Override window ends at ${overrideWindowEndsAt.toISOString()}.`,
@@ -157,7 +158,7 @@ export async function processVerdicts(
     await db.messageLog.create({
       data: {
         fromId: 'verdict-engine',
-        toId: 'dustin',
+        toId: SYSTEM_NOTIFY_USER,
         channel: 'refinery_verdict',
         subject: `Verdict auto-executed: ${idea.title}`,
         body: `Override window expired. Decision: ${decision}. Signups: ${signups}/${target}. Status: ${newStatus}.`,
