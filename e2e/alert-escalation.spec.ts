@@ -22,35 +22,38 @@ test.afterAll(async () => {
 
 test.describe('Alert Escalation Pipeline', () => {
   test('create alert and acknowledge it', async ({ request }) => {
-    // Create a P2 alert directly in DB for testing
-    const alert = await prisma.carPlayAlert.create({
+    // Create an open escalation — evaluateAlerts() will materialize it as a CarPlayAlert
+    const escalation = await prisma.escalation.create({
       data: {
-        severity: 2,
-        type: 'ci',
-        title: 'E2E: CI pipeline failing',
-        dedupeKey: `e2e-ci-${Date.now()}`,
+        fromAgentId: 'rocket',
+        severity: 'warning',
+        category: 'test',
+        title: 'E2E: Test escalation alert',
+        status: 'open',
       },
     });
 
-    // Fetch active alerts via API
+    // Fetch active alerts via API (evaluateAlerts runs first, materializing the escalation)
     const listRes = await request.get('/api/carplay/alerts?resolved=false', {
       headers: carPlayHeaders(),
     });
     expect(listRes.status()).toBe(200);
     const alerts = await listRes.json();
-    const found = (alerts.alerts || alerts).find((a: { id: string }) => a.id === alert.id);
+    const found = alerts.alerts.find(
+      (a: { title: string }) => a.title === 'E2E: Test escalation alert',
+    );
     expect(found).toBeDefined();
-    expect(found.severity).toBe(2);
+    expect(found.severity).toBe(2); // 'warning' maps to severity 2
 
     // Acknowledge the alert
     const ackRes = await request.post('/api/carplay/alerts', {
       headers: carPlayHeaders(),
-      data: { alertId: alert.id },
+      data: { alertId: found.id },
     });
     expect(ackRes.status()).toBe(200);
 
     // Verify it's acknowledged
-    const ackAlert = await prisma.carPlayAlert.findUnique({ where: { id: alert.id } });
+    const ackAlert = await prisma.carPlayAlert.findUnique({ where: { id: found.id } });
     expect(ackAlert?.acknowledgedAt).not.toBeNull();
   });
 
