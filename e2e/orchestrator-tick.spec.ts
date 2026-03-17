@@ -24,9 +24,9 @@ test.describe('Orchestrator Tick Cycle', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    expect(body).toHaveProperty('ok', true);
-    expect(body).toHaveProperty('durationMs');
-    expect(typeof body.durationMs).toBe('number');
+    expect(body).toHaveProperty('status');
+    expect(['completed', 'idle', 'disabled']).toContain(body.status);
+    expect(body).toHaveProperty('timestamp');
   });
 
   test('tick calculates drift scores for active agents', async ({ request }) => {
@@ -44,7 +44,7 @@ test.describe('Orchestrator Tick Cycle', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    expect(body.ok).toBe(true);
+    expect(['completed', 'idle', 'disabled']).toContain(body.status);
 
     // Verify drift score is reflected in dashboard after tick
     const dashRes = await request.get('/api/dashboard');
@@ -61,7 +61,7 @@ test.describe('Orchestrator Tick Cycle', () => {
     expect(response.status()).toBe(200);
 
     const body = await response.json();
-    expect(body.ok).toBe(true);
+    expect(['completed', 'idle', 'disabled']).toContain(body.status);
   });
 
   test('dashboard reflects agent state after tick', async ({ request }) => {

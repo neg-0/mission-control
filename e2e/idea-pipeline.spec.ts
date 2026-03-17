@@ -52,14 +52,36 @@ test.describe('Idea Pipeline', () => {
       data: { validationDeadline: new Date(Date.now() - 1000) },
     });
 
-    // 5. Trigger verdict
+    // 5. Trigger verdict (Phase 1 — marks as review_failed with pending verdict)
     const verdictRes = await request.get('/api/cron-jobs/refinery-verdict');
     expect(verdictRes.status()).toBe(200);
     const verdict = await verdictRes.json();
     expect(verdict.processed).toBe(1);
     expect(verdict.results[0].decision).toBe('PASS');
 
-    // 6. Verify idea is now validated
+    // Phase 1 sets review_failed with override window
+    const midRes = await request.get(`/api/ideas/${idea.id}`);
+    const midIdea = await midRes.json();
+    expect(midIdea.status).toBe('review_failed');
+
+    // 6. Expire override window and trigger Phase 2 auto-execution
+    await prisma.idea.update({
+      where: { id: idea.id },
+      data: {
+        refineryData: {
+          ...((midIdea.refineryData as Record<string, unknown>) || {}),
+          overrideWindowEndsAt: new Date(Date.now() - 1000).toISOString(),
+        },
+      },
+    });
+
+    const phase2Res = await request.get('/api/cron-jobs/refinery-verdict');
+    expect(phase2Res.status()).toBe(200);
+    const phase2 = await phase2Res.json();
+    const autoExec = phase2.results.find((r: { autoExecuted: boolean }) => r.autoExecuted);
+    expect(autoExec).toBeDefined();
+
+    // 7. Verify idea is now validated
     const finalRes = await request.get(`/api/ideas/${idea.id}`);
     const finalIdea = await finalRes.json();
     expect(finalIdea.status).toBe('validated');

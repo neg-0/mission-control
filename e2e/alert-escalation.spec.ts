@@ -10,6 +10,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { seedWarRoom, teardown, prisma } from './helpers/seed';
+import { carPlayHeaders } from './helpers/carplay-auth';
 
 test.beforeEach(async () => {
   await seedWarRoom();
@@ -32,7 +33,9 @@ test.describe('Alert Escalation Pipeline', () => {
     });
 
     // Fetch active alerts via API
-    const listRes = await request.get('/api/carplay/alerts?resolved=false');
+    const listRes = await request.get('/api/carplay/alerts?resolved=false', {
+      headers: carPlayHeaders(),
+    });
     expect(listRes.status()).toBe(200);
     const alerts = await listRes.json();
     const found = (alerts.alerts || alerts).find((a: { id: string }) => a.id === alert.id);
@@ -41,6 +44,7 @@ test.describe('Alert Escalation Pipeline', () => {
 
     // Acknowledge the alert
     const ackRes = await request.post('/api/carplay/alerts', {
+      headers: carPlayHeaders(),
       data: { alertId: alert.id },
     });
     expect(ackRes.status()).toBe(200);
@@ -91,7 +95,7 @@ test.describe('Alert Escalation Pipeline', () => {
     const metricsRes = await request.get('/api/alerts/metrics?days=30');
     expect(metricsRes.status()).toBe(200);
     const metrics = await metricsRes.json();
-    expect(metrics).toHaveProperty('volumeBySeverity');
+    expect(metrics).toHaveProperty('bySeverity');
   });
 
   test('resolved alerts are excluded from active list', async ({ request }) => {
@@ -106,7 +110,9 @@ test.describe('Alert Escalation Pipeline', () => {
       },
     });
 
-    const listRes = await request.get('/api/carplay/alerts?resolved=false');
+    const listRes = await request.get('/api/carplay/alerts?resolved=false', {
+      headers: carPlayHeaders(),
+    });
     const alerts = await listRes.json();
     const found = (alerts.alerts || alerts).find((a: { id: string }) => a.id === alert.id);
     expect(found).toBeUndefined();
