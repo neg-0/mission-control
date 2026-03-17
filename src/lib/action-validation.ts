@@ -364,10 +364,10 @@ export async function logDecision(
       entityType,
       entityId,
       field,
-      previousValue: previousValue as Record<string, unknown> | null,
-      newValue: newValue as Record<string, unknown>,
+      previousValue: (previousValue ?? undefined) as Parameters<typeof db.decisionLog.create>[0]['data']['previousValue'],
+      newValue: newValue as Parameters<typeof db.decisionLog.create>[0]['data']['newValue'],
       rationale,
-      alternatives: alternatives as Record<string, unknown> | undefined,
+      alternatives: (alternatives ?? undefined) as Parameters<typeof db.decisionLog.create>[0]['data']['alternatives'],
       decidedBy,
     },
   });

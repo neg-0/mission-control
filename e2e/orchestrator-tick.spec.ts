@@ -73,10 +73,10 @@ test.describe('Orchestrator Tick Cycle', () => {
     expect(dashResponse.status()).toBe(200);
 
     const dashboard = await dashResponse.json();
-    expect(dashboard.agents).toBeDefined();
-    expect(dashboard.agents.length).toBeGreaterThan(0);
+    expect(dashboard.fleet).toBeDefined();
+    expect(dashboard.fleet.length).toBeGreaterThan(0);
 
-    const rocket = dashboard.agents.find((a: { id: string }) => a.id === 'rocket');
+    const rocket = dashboard.fleet.find((a: { id: string }) => a.id === 'rocket');
     expect(rocket).toBeDefined();
     expect(rocket.id).toBe('rocket');
   });

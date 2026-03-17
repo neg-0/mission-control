@@ -112,8 +112,8 @@ export async function generatePostMortem(
     data: {
       refineryData: {
         ...(refineryData || {}),
-        postmortem,
-      },
+        postmortem: postmortem as unknown as Record<string, unknown>,
+      } as Parameters<typeof db.idea.update>[0]['data']['refineryData'],
     },
   });
 
@@ -126,7 +126,7 @@ export async function generatePostMortem(
       subject: `Post-mortem: ${idea.title}`,
       body: formatPostMortemSummary(postmortem),
       status: 'sent',
-      metadata: { ideaId: idea.id, postmortem },
+      metadata: { ideaId: idea.id, postmortem: JSON.parse(JSON.stringify(postmortem)) },
     },
   });
 

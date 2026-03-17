@@ -35,9 +35,10 @@ interface ArchivedIdea {
   createdAt: string;
 }
 
-interface IdeasKanbanProps {
+export interface IdeasKanbanProps {
   items: IdeaItem[];
   onCardClick?: (ideaId: string) => void;
+  onStageChange?: (ideaId: string, newStatus: string) => Promise<void>;
 }
 
 // ─── Column Config ──────────────────────────────────────────────────────────────
