@@ -9,6 +9,8 @@
 import { buildHeartbeatContext, estimateTokens } from '@/lib/build-heartbeat-context';
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/heartbeat-preview?agentId=captain&scheduleName=Work%20Session&journalEntries=5
  */

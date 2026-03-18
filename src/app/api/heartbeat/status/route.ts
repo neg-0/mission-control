@@ -71,6 +71,8 @@ import { getTimerStatus } from '@/lib/orchestrator-timer';
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/heartbeat/status
  *
