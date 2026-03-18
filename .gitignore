@@ -49,3 +49,6 @@ server.log
 
 # Prisma generated client
 prisma/generated/
+
+# Claude Code
+.claude/

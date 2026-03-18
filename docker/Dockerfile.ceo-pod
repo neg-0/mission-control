@@ -1,0 +1,97 @@
+# ============================================================================
+# CEO Pod Base Image
+# ============================================================================
+# Base Docker image for Mission Control CEO Pods.
+# Each pod runs an isolated agent workspace with:
+#   - Ubuntu 22.04 LTS base
+#   - Node.js 20 LTS runtime (for OpenClaw/Claude Code)
+#   - Git, curl, common dev tools
+#   - Read-only mounted project manifest (drift prevention Layer 1)
+#   - Injected SOUL.md, HEARTBEAT.md, GOALS.md at build time
+#   - Health check endpoint for fleet registry
+#   - Resource limits enforced via Docker/Compose
+#
+# Build:
+#   docker build -f docker/Dockerfile.ceo-pod \
+#     --build-arg AGENT_ID=rocket \
+#     --build-arg PROJECT_ID=comp-iq \
+#     -t mc-pod-rocket .
+#
+# Run:
+#   docker run -d --name pod-rocket \
+#     -e MC_URL=http://host.docker.internal:3000 \
+#     -e AGENT_ID=rocket \
+#     -v ./manifests/rocket.lock.json:/pod/project.lock.json:ro \
+#     --memory=512m --cpus=0.5 \
+#     mc-pod-rocket
+# ============================================================================
+
+FROM ubuntu:22.04 AS base
+
+# Avoid interactive prompts during package install
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── System packages ──────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    git \
+    jq \
+    ca-certificates \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Node.js 20 LTS ──────────────────────────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Create pod workspace ────────────────────────────────────────────
+RUN mkdir -p /pod/workspace /pod/context /pod/logs /pod/tmp \
+    && useradd -m -s /bin/bash poduser \
+    && chown -R poduser:poduser /pod
+
+# ── Build args for per-pod overlay ──────────────────────────────────
+ARG AGENT_ID=unnamed
+ARG PROJECT_ID=unknown
+ARG POD_VERSION=latest
+
+ENV AGENT_ID=${AGENT_ID}
+ENV PROJECT_ID=${PROJECT_ID}
+ENV POD_VERSION=${POD_VERSION}
+
+# ── Pod metadata ────────────────────────────────────────────────────
+LABEL org.missioncontrol.agent="${AGENT_ID}" \
+      org.missioncontrol.project="${PROJECT_ID}" \
+      org.missioncontrol.version="${POD_VERSION}" \
+      org.missioncontrol.component="ceo-pod"
+
+# ── Copy pod context files (SOUL.md, HEARTBEAT.md, GOALS.md) ───────
+# These are injected at build time from the agent's workspace
+COPY docker/context/${AGENT_ID}/ /pod/context/
+RUN chown -R poduser:poduser /pod/context
+
+# ── Copy health check + entrypoint scripts ──────────────────────────
+COPY docker/scripts/healthcheck.sh /pod/healthcheck.sh
+COPY docker/scripts/entrypoint.sh /pod/entrypoint.sh
+RUN chmod +x /pod/healthcheck.sh /pod/entrypoint.sh
+
+# ── Resource limits hint (enforced by Docker runtime) ───────────────
+# These are documentation; actual limits set via docker run or compose
+ENV POD_MEMORY_LIMIT=512m
+ENV POD_CPU_LIMIT=0.5
+
+# ── Health check ────────────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD /pod/healthcheck.sh
+
+# ── Switch to non-root user ─────────────────────────────────────────
+USER poduser
+WORKDIR /pod/workspace
+
+# ── Volume mount points ─────────────────────────────────────────────
+# project.lock.json mounted read-only at runtime (Layer 1 drift prevention)
+VOLUME ["/pod/project.lock.json"]
+
+# ── Entrypoint ──────────────────────────────────────────────────────
+ENTRYPOINT ["/pod/entrypoint.sh"]

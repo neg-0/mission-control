@@ -1,0 +1,152 @@
+# ============================================================================
+# Mission Control Fleet — Docker Compose
+# ============================================================================
+# Local development setup for running MC + CEO Pods together.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml logs -f pod-rocket
+#   docker compose -f docker/docker-compose.yml down
+#
+# Production:
+#   Override with docker-compose.prod.yml for Railway/cloud deployment.
+# ============================================================================
+
+version: "3.9"
+
+x-pod-defaults: &pod-defaults
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.ceo-pod
+  restart: unless-stopped
+  networks:
+    - mc-fleet
+  depends_on:
+    mission-control:
+      condition: service_healthy
+  environment: &pod-env
+    MC_URL: http://mission-control:3000
+    HEARTBEAT_INTERVAL: "60"
+    NODE_ENV: production
+
+services:
+  # ── Mission Control (Hub) ────────────────────────────────────────
+  mission-control:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mc:mc@postgres:5432/mission_control}
+      NEXT_PUBLIC_BASE_URL: http://localhost:3000
+      NODE_ENV: production
+    networks:
+      - mc-fleet
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: "1.0"
+
+  # ── Postgres ─────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mc
+      POSTGRES_PASSWORD: mc
+      POSTGRES_DB: mission_control
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mc-fleet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mc"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  # ── CEO Pod: Rocket (COO) ────────────────────────────────────────
+  pod-rocket:
+    <<: *pod-defaults
+    container_name: mc-pod-rocket
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ceo-pod
+      args:
+        AGENT_ID: rocket
+        PROJECT_ID: comp-iq
+    environment:
+      <<: *pod-env
+      AGENT_ID: rocket
+      PROJECT_ID: comp-iq
+    volumes:
+      - ./manifests/rocket.lock.json:/pod/project.lock.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  # ── CEO Pod: Moose (Marketing) ──────────────────────────────────
+  pod-moose:
+    <<: *pod-defaults
+    container_name: mc-pod-moose
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ceo-pod
+      args:
+        AGENT_ID: moose
+        PROJECT_ID: chocks
+    environment:
+      <<: *pod-env
+      AGENT_ID: moose
+      PROJECT_ID: chocks
+    volumes:
+      - ./manifests/moose.lock.json:/pod/project.lock.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  # ── CEO Pod: Template (uncomment + customize for new agents) ─────
+  # pod-newagent:
+  #   <<: *pod-defaults
+  #   container_name: mc-pod-newagent
+  #   build:
+  #     args:
+  #       AGENT_ID: newagent
+  #       PROJECT_ID: project-name
+  #   environment:
+  #     <<: *pod-env
+  #     AGENT_ID: newagent
+  #     PROJECT_ID: project-name
+  #   volumes:
+  #     - ./manifests/newagent.lock.json:/pod/project.lock.json:ro
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #         cpus: "0.5"
+
+networks:
+  mc-fleet:
+    driver: bridge
+
+volumes:
+  pgdata:
