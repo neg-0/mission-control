@@ -144,7 +144,7 @@ export const UpdateOrchestratorConfigSchema = z
     /** Enable/disable the orchestrator globally */
     enabled: z.boolean().optional(),
     /** Per-tier model config: { heartbeat: { provider, model, ... }, standard: {...}, strategic: {...} } */
-    modelTiers: z.record(z.string(), z.object({
+    modelTiers: z.record(z.enum(['heartbeat', 'standard', 'strategic']), z.object({
       provider: z.string(),
       model: z.string(),
       fallbackProvider: z.string().optional(),

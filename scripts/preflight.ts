@@ -30,11 +30,8 @@ async function main() {
 
   console.log('');
 
-  if (result.ready) {
-    console.log(`\x1b[32m\x1b[1m${result.summary}\x1b[0m`);
-  } else {
-    console.log(`\x1b[31m\x1b[1m${result.summary}\x1b[0m`);
-  }
+  const color = result.ready ? '\x1b[32m' : '\x1b[31m';
+  console.log(`${color}\x1b[1m${result.summary}\x1b[0m`);
 
   console.log('');
   process.exit(result.ready ? 0 : 1);

@@ -49,7 +49,7 @@ export async function GET() {
     }
 
     // eslint-disable-next-line no-console
-    console.log(`[Cron] Token refreshed. Distributed to ${result.distributedTo} workspaces.`);
+    console.log(`[Cron] Token refreshed. Distributed to ${result.distribution?.succeeded ?? 0} workspaces (${result.distribution?.failed ?? 0} failed).`);
 
     // Validate the new token immediately to detect bad responses
     try {
@@ -91,7 +91,8 @@ export async function GET() {
       message: 'Token refreshed and distributed',
       expires_in: result.expiresIn,
       accountToken: {
-        distributed: result.distributedTo,
+        distributed: result.distribution?.succeeded ?? 0,
+        failed: result.distribution?.failed ?? 0,
       },
       projectTokens: {
         generated: projectDistribution.generated.length,

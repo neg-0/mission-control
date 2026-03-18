@@ -329,7 +329,7 @@ export async function recoverExpiredTokens(
         action: 'token_refresh',
         outcome: refreshResult.ok ? 'success' : 'failed',
         details: refreshResult.ok
-          ? { distributedTo: refreshResult.distributedTo }
+          ? { distribution: refreshResult.distribution }
           : { error: refreshResult.error },
       },
     });
@@ -340,7 +340,7 @@ export async function recoverExpiredTokens(
       action: 'token_refresh',
       outcome: refreshResult.ok ? 'success' : 'failed',
       details: refreshResult.ok
-        ? { distributedTo: refreshResult.distributedTo }
+        ? { distribution: refreshResult.distribution }
         : { error: refreshResult.error },
     });
 
@@ -563,7 +563,7 @@ export async function recoverStalledCI(
       continue;
     }
 
-    const repoMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
+    const repoMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
     if (!repoMatch) continue;
     const [, owner, repo] = repoMatch;
 

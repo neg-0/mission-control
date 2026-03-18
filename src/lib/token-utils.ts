@@ -253,7 +253,7 @@ export interface RefreshResult {
   ok: boolean;
   accessToken?: string;
   expiresIn?: number;
-  distributedTo?: number;
+  distribution?: { succeeded: number; failed: number };
   error?: string;
 }
 
@@ -305,7 +305,10 @@ export async function refreshRailwayToken(): Promise<RefreshResult> {
       ok: true,
       accessToken: newAccessToken,
       expiresIn: data.expires_in,
-      distributedTo: distribution.updated.length,
+      distribution: {
+        succeeded: distribution.updated.length,
+        failed: distribution.failed.length,
+      },
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

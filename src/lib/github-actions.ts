@@ -26,27 +26,36 @@ export async function cancelWorkflowRuns(
     'X-GitHub-Api-Version': '2022-11-28',
   };
 
-  const res = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/actions/runs?status=in_progress&per_page=10`,
-    { headers },
-  );
-
-  if (!res.ok) {
-    throw new Error(`GitHub API error ${res.status}: ${await res.text()}`);
-  }
-
-  const data = await res.json();
-  const runs: Array<{ id: number }> = data.workflow_runs ?? [];
-
   let cancelled = 0;
-  for (const run of runs) {
-    const cancelRes = await fetch(
-      `${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${run.id}/cancel`,
-      { method: 'POST', headers },
+  let page = 1;
+
+  // Paginate to cancel all in-progress runs, not just the first page
+  while (true) {
+    const res = await fetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/actions/runs?status=in_progress&per_page=30&page=${page}`,
+      { headers },
     );
-    if (cancelRes.ok || cancelRes.status === 202) {
-      cancelled++;
+
+    if (!res.ok) {
+      throw new Error(`GitHub API error ${res.status}: ${await res.text()}`);
     }
+
+    const data = await res.json();
+    const runs: Array<{ id: number }> = data.workflow_runs ?? [];
+
+    if (runs.length === 0) break;
+
+    for (const run of runs) {
+      const cancelRes = await fetch(
+        `${GITHUB_API}/repos/${owner}/${repo}/actions/runs/${run.id}/cancel`,
+        { method: 'POST', headers },
+      );
+      if (cancelRes.ok || cancelRes.status === 202) {
+        cancelled++;
+      }
+    }
+
+    page++;
   }
 
   return cancelled;
