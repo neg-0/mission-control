@@ -244,6 +244,78 @@ export async function persistMCTokens(
 }
 
 // ---------------------------------------------------------------------------
+// Token refresh (extracted from cron/refresh-tokens for use by recovery)
+// ---------------------------------------------------------------------------
+
+const TOKEN_ENDPOINT = 'https://backboard.railway.com/oauth/token';
+
+export interface RefreshResult {
+  ok: boolean;
+  accessToken?: string;
+  expiresIn?: number;
+  distribution?: { succeeded: number; failed: number };
+  error?: string;
+}
+
+/**
+ * Refresh the Railway OAuth token, persist it, and distribute to agents.
+ *
+ * This is the core logic extracted from `/api/cron/refresh-tokens` so the
+ * recovery playbook can call it without an HTTP round-trip.
+ *
+ * Returns a summary — never throws.
+ */
+export async function refreshRailwayToken(): Promise<RefreshResult> {
+  try {
+    const refreshToken = await getFreshRefreshToken();
+    const clientId = await getFreshEnvVar('RAILWAY_CLIENT_ID');
+    const clientSecret = await getFreshEnvVar('RAILWAY_CLIENT_SECRET');
+
+    if (!refreshToken || !clientId) {
+      return { ok: false, error: 'No refresh token or client ID configured' };
+    }
+
+    const body: Record<string, string> = {
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+    };
+    if (clientSecret) body.client_secret = clientSecret;
+
+    const response = await fetch(TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body),
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `Railway returned ${response.status}: ${errorText}` };
+    }
+
+    const data = await response.json();
+    const newAccessToken = data.access_token;
+    const newRefreshToken = data.refresh_token;
+
+    await persistMCTokens(newAccessToken, newRefreshToken);
+    const distribution = await distributeTokenToAgents(newAccessToken);
+
+    return {
+      ok: true,
+      accessToken: newAccessToken,
+      expiresIn: data.expires_in,
+      distribution: {
+        succeeded: distribution.updated.length,
+        failed: distribution.failed.length,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Railway GraphQL: Project token generation
 // ---------------------------------------------------------------------------
 

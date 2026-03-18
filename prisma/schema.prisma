@@ -316,6 +316,7 @@ model OrchestratorConfig {
   quotaResetHours Float    @default(5.0)    // Quota reset window in hours
   journalEntries  Int      @default(5)      // How many recent journal entries to include in wake context
   mdInjections    Json?    // Array of markdown file paths to inject into wake context, e.g. ["/path/to/PLAYBOOK.md"]
+  modelTiers      Json?    // Per-tier model config: { heartbeat: { provider, model }, standard: {...}, strategic: {...} }
   enabled         Boolean  @default(true)
   updatedAt       DateTime @updatedAt
 }

@@ -1,5 +1,8 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
+  // Serialize test execution to prevent DB deadlocks when unit and API
+  // projects run concurrently against the same Postgres instance
+  maxWorkers: 1,
   projects: [
     // ── Unit Tests ──────────────────────────────────────────────────────
     // Existing pure-function tests. No database, no setup files.

@@ -24,7 +24,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { UpdateOrchestratorConfigSchema, formatZodError } from '@/lib/schemas';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -128,6 +128,9 @@ export async function PATCH(request: NextRequest) {
     if (body.journalEntries !== undefined) data.journalEntries = body.journalEntries;
     if (body.mdInjections !== undefined) data.mdInjections = body.mdInjections;
     if (body.enabled !== undefined) data.enabled = body.enabled;
+    if (body.modelTiers !== undefined) {
+      data.modelTiers = body.modelTiers === null ? Prisma.DbNull : body.modelTiers;
+    }
 
     const config = await prisma.orchestratorConfig.upsert({
       where: { id: 'singleton' },
@@ -142,6 +145,7 @@ export async function PATCH(request: NextRequest) {
         ...(body.journalEntries !== undefined && { journalEntries: body.journalEntries }),
         ...(body.mdInjections !== undefined && { mdInjections: body.mdInjections }),
         ...(body.enabled !== undefined && { enabled: body.enabled }),
+        ...(body.modelTiers !== undefined && { modelTiers: body.modelTiers === null ? Prisma.DbNull : body.modelTiers }),
       },
       update: data,
     });

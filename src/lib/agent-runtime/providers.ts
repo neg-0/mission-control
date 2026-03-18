@@ -501,6 +501,29 @@ export async function callLLM(
 }
 
 /**
+ * Call an LLM using the model tier system.
+ *
+ * Resolves provider configs from tier defaults → OrchestratorConfig overrides → agent overrides,
+ * then delegates to callLLM() with automatic failover.
+ */
+export async function callLLMWithTier(
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  tier: import('../model-tiers').ModelTier,
+  customTiers?: Partial<import('../model-tiers').ModelTierMap> | null,
+  agentOverride?: {
+    providerPrimary?: string | null;
+    modelPrimary?: string | null;
+    providerFallback?: string | null;
+    modelFallback?: string | null;
+  },
+): Promise<LLMResponse> {
+  const { resolveProviderConfigs } = await import('../model-tiers');
+  const { primary, fallback } = resolveProviderConfigs(tier, customTiers, agentOverride);
+  return callLLM(messages, tools, primary, fallback);
+}
+
+/**
  * Build a ProviderConfig from agent DB fields.
  */
 export function buildProviderConfig(

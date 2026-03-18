@@ -17,9 +17,17 @@
 import { buildHeartbeatContext } from '@/lib/build-heartbeat-context';
 import { checkAgentBudget } from '@/lib/budget-breaker';
 import { calculateDriftScore } from '@/lib/drift-score';
-import { recoverMissedHeartbeats, recoverFailedSessions } from '@/lib/drift-recovery';
+import {
+  recoverMissedHeartbeats,
+  recoverFailedSessions,
+  recoverExpiredTokens,
+  recoverFailedDeploys,
+  recoverStalledCI,
+} from '@/lib/drift-recovery';
 import { checkGatewayHealth, queueAction } from '@/lib/gateway-health';
 import { detectMissedTicks } from '@/lib/missed-tick';
+import { resolveProviderConfigs, scheduleTypeToTier } from '@/lib/model-tiers';
+import type { ModelTierMap } from '@/lib/model-tiers';
 import { getNextCronRun } from '@/lib/orchestrator';
 import { prisma } from '@/lib/prisma';
 
@@ -231,10 +239,21 @@ export async function executeTick(): Promise<TickSummary> {
 
     // 5a. NATIVE MODE: Run agent loop directly in MC
     if (schedule.agent.runtimeMode === 'native') {
-      if (!schedule.agent.providerPrimary || !schedule.agent.modelPrimary) {
-        wakeStatus = 'error';
-        wakeError = 'Native mode agent missing provider/model configuration';
-      } else {
+      // Resolve provider via tier system: agent override > config tiers > defaults
+      const tier = scheduleTypeToTier(schedule.type);
+      const customTiers = config.modelTiers as Partial<ModelTierMap> | null;
+      const { primary: tierPrimary, fallback: tierFallback } = resolveProviderConfigs(
+        tier,
+        customTiers,
+        {
+          providerPrimary: schedule.agent.providerPrimary,
+          modelPrimary: schedule.agent.modelPrimary,
+          providerFallback: schedule.agent.providerFallback,
+          modelFallback: schedule.agent.modelFallback,
+        },
+      );
+
+      {
         try {
           // Dynamic import from specific file to avoid webpack bundling the entire agent-runtime barrel
           const { runAgentLoop } = await import('@/lib/agent-runtime/agent-loop');
@@ -242,10 +261,10 @@ export async function executeTick(): Promise<TickSummary> {
           const agentConfig = {
             agentId: schedule.agent.id,
             workspacePath: schedule.agent.workspacePath,
-            providerPrimary: schedule.agent.providerPrimary,
-            modelPrimary: schedule.agent.modelPrimary,
-            providerFallback: schedule.agent.providerFallback || undefined,
-            modelFallback: schedule.agent.modelFallback || undefined,
+            providerPrimary: tierPrimary.provider,
+            modelPrimary: tierPrimary.model,
+            providerFallback: tierFallback?.provider || undefined,
+            modelFallback: tierFallback?.model || undefined,
           };
 
           console.log(`[Orchestrator] Running native agent: ${schedule.agent.id}`);
@@ -383,6 +402,21 @@ export async function executeTick(): Promise<TickSummary> {
     await recoverFailedSessions();
   } catch (err) {
     console.warn('[Orchestrator] Failed session recovery failed:', err);
+  }
+  try {
+    await recoverExpiredTokens();
+  } catch (err) {
+    console.warn('[Orchestrator] Expired token recovery failed:', err);
+  }
+  try {
+    await recoverFailedDeploys();
+  } catch (err) {
+    console.warn('[Orchestrator] Failed deploy recovery failed:', err);
+  }
+  try {
+    await recoverStalledCI();
+  } catch (err) {
+    console.warn('[Orchestrator] Stalled CI recovery failed:', err);
   }
 
   const processed = results.filter((r) => r.status === 'ok' || r.status === 'dry-run').length;

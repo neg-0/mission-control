@@ -3,14 +3,16 @@
  * @description
  * Auto-recovery playbooks for drifting agents.
  *
- * Two playbooks, each following the carplay-alerts.ts pattern:
+ * Five playbooks, each following the carplay-alerts.ts pattern:
  *   query → decide → act → log
  *
  * 1. Missed Heartbeat Recovery — reset schedule for agents that went silent
  * 2. Consecutive Failure Quarantine — cooldown + retry for agents that keep failing
- *    (inspired by Atlas flake/quarantine.ts: 3 fails → quarantine)
+ * 3. Expired Token Recovery — refresh Railway OAuth tokens automatically
+ * 4. Failed Deploy Retry — retry failing pipelines (max 2 per 24h)
+ * 5. Stalled CI Recovery — cancel + re-trigger stalled CI workflows
  *
- * Both playbooks are non-fatal — errors are caught and logged, never blocking
+ * All playbooks are non-fatal — errors are caught and logged, never blocking
  * the orchestrator tick.
  */
 
@@ -26,6 +28,9 @@ export interface RecoveryResult {
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const THIRTY_MIN_MS = 30 * 60 * 1000;
+const TEN_MIN_MS = 10 * 60 * 1000;
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const COOLDOWN_MS = 60 * 1000; // 1 minute before retry
 
 // ---------------------------------------------------------------------------
@@ -253,6 +258,353 @@ export async function recoverFailedSessions(
         action: 'cooldown_retry',
         outcome: 'failed',
         details: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Playbook 3: Expired Token Recovery (Task 1.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect expired/missing Railway tokens and trigger a refresh.
+ *
+ * Detection: RAILWAY_LAST_REFRESH_AT is either missing or older than 2 hours
+ * (tokens expire after 1h; 2h gives buffer for the hourly cron).
+ *
+ * 30-minute cooldown guard prevents rapid-fire refreshes.
+ */
+export async function recoverExpiredTokens(
+  db: PrismaClient = defaultPrisma,
+): Promise<RecoveryResult[]> {
+  const results: RecoveryResult[] = [];
+
+  const lastRefresh = process.env.RAILWAY_LAST_REFRESH_AT;
+  const tokenPresent = !!process.env.RAILWAY_API_TOKEN;
+
+  if (tokenPresent && lastRefresh) {
+    const refreshAge = Date.now() - new Date(lastRefresh).getTime();
+    if (refreshAge < 2 * ONE_HOUR_MS) {
+      return results; // Token is fresh enough
+    }
+  }
+
+  // If no Railway projects exist, skip (no Railway integration)
+  const railwayProjectCount = await db.project.count({
+    where: { railwayProjectId: { not: null } },
+  });
+  if (railwayProjectCount === 0) return results;
+
+  // Cooldown guard: already tried within 30 minutes?
+  const recentRecovery = await db.recoveryLog.findFirst({
+    where: {
+      trigger: 'expired_token',
+      createdAt: { gte: new Date(Date.now() - THIRTY_MIN_MS) },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (recentRecovery) {
+    results.push({
+      agentId: 'system',
+      trigger: 'expired_token',
+      action: 'token_refresh',
+      outcome: 'skipped',
+      details: { reason: 'cooldown_active', lastAttempt: recentRecovery.createdAt },
+    });
+    return results;
+  }
+
+  try {
+    const { refreshRailwayToken } = await import('./token-utils');
+    const refreshResult = await refreshRailwayToken();
+
+    await db.recoveryLog.create({
+      data: {
+        agentId: 'system',
+        trigger: 'expired_token',
+        action: 'token_refresh',
+        outcome: refreshResult.ok ? 'success' : 'failed',
+        details: refreshResult.ok
+          ? { distribution: refreshResult.distribution }
+          : { error: refreshResult.error },
+      },
+    });
+
+    results.push({
+      agentId: 'system',
+      trigger: 'expired_token',
+      action: 'token_refresh',
+      outcome: refreshResult.ok ? 'success' : 'failed',
+      details: refreshResult.ok
+        ? { distribution: refreshResult.distribution }
+        : { error: refreshResult.error },
+    });
+
+    if (!refreshResult.ok) {
+      await db.escalation.create({
+        data: {
+          fromAgentId: 'system',
+          severity: 'critical',
+          category: 'infra',
+          title: 'Railway token refresh failed during recovery',
+          description: `Auto-recovery attempted token refresh but failed: ${refreshResult.error}`,
+        },
+      });
+    }
+  } catch (err) {
+    results.push({
+      agentId: 'system',
+      trigger: 'expired_token',
+      action: 'token_refresh',
+      outcome: 'failed',
+      details: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Playbook 4: Failed Deploy Retry (Task 1.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find pipelines with status='failing' and retry by resetting the owner
+ * agent's heartbeat schedule to fire on the next tick.
+ *
+ * Guards:
+ * - Max 2 retries per pipeline per 24h
+ * - 10-minute cooldown between retries for the same pipeline
+ * - Escalates to critical if max retries exceeded
+ */
+export async function recoverFailedDeploys(
+  db: PrismaClient = defaultPrisma,
+): Promise<RecoveryResult[]> {
+  const results: RecoveryResult[] = [];
+
+  const failingPipelines = await db.pipeline.findMany({
+    where: { status: 'failing' },
+    include: {
+      project: { select: { id: true, name: true, ownerAgentId: true } },
+    },
+  });
+
+  for (const pipeline of failingPipelines) {
+    const agentId = pipeline.project?.ownerAgentId;
+    if (!agentId) continue;
+
+    const recentRetries = await db.recoveryLog.count({
+      where: {
+        trigger: 'failed_deploy',
+        agentId,
+        createdAt: { gte: new Date(Date.now() - TWENTY_FOUR_HOURS_MS) },
+        details: { path: ['pipelineId'], equals: pipeline.id },
+      },
+    });
+
+    if (recentRetries >= 2) {
+      await db.escalation.create({
+        data: {
+          fromAgentId: agentId,
+          severity: 'critical',
+          category: 'pipeline',
+          title: `Pipeline ${pipeline.project?.name ?? pipeline.id}: deploy failing after ${recentRetries} recovery attempts`,
+          description: 'Max recovery retries (2/24h) exceeded. Manual intervention required.',
+        },
+      });
+
+      results.push({
+        agentId,
+        trigger: 'failed_deploy',
+        action: 'retry_deploy',
+        outcome: 'skipped',
+        details: { reason: 'max_retries_exceeded', retries: recentRetries, pipelineId: pipeline.id },
+      });
+      continue;
+    }
+
+    // 10-minute cooldown
+    const lastRetry = await db.recoveryLog.findFirst({
+      where: {
+        trigger: 'failed_deploy',
+        agentId,
+        createdAt: { gte: new Date(Date.now() - TEN_MIN_MS) },
+        details: { path: ['pipelineId'], equals: pipeline.id },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (lastRetry) {
+      results.push({
+        agentId,
+        trigger: 'failed_deploy',
+        action: 'retry_deploy',
+        outcome: 'skipped',
+        details: { reason: 'cooldown_active', pipelineId: pipeline.id },
+      });
+      continue;
+    }
+
+    try {
+      const schedule = await db.schedule.findFirst({
+        where: { agentId, type: 'heartbeat', enabled: true },
+      });
+
+      if (schedule) {
+        await db.schedule.update({
+          where: { id: schedule.id },
+          data: { nextRunAt: new Date() },
+        });
+      }
+
+      await db.recoveryLog.create({
+        data: {
+          agentId,
+          trigger: 'failed_deploy',
+          action: 'retry_deploy',
+          outcome: 'success',
+          details: {
+            pipelineId: pipeline.id,
+            projectName: pipeline.project?.name,
+            retryNumber: recentRetries + 1,
+          },
+        },
+      });
+
+      results.push({
+        agentId,
+        trigger: 'failed_deploy',
+        action: 'retry_deploy',
+        outcome: 'success',
+        details: { pipelineId: pipeline.id },
+      });
+    } catch (err) {
+      results.push({
+        agentId,
+        trigger: 'failed_deploy',
+        action: 'retry_deploy',
+        outcome: 'failed',
+        details: { error: err instanceof Error ? err.message : String(err), pipelineId: pipeline.id },
+      });
+    }
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Playbook 5: Stalled CI Recovery (Task 1.7)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find pipelines with status='pending' that have been running for > 30 minutes,
+ * cancel the GitHub Actions workflow, and re-trigger.
+ *
+ * Guards:
+ * - Max 1 retry per pipeline per 24h
+ * - Requires GITHUB_TOKEN env var
+ */
+export async function recoverStalledCI(
+  db: PrismaClient = defaultPrisma,
+): Promise<RecoveryResult[]> {
+  const results: RecoveryResult[] = [];
+
+  const githubToken = process.env.GITHUB_TOKEN;
+  if (!githubToken) return results;
+
+  const stalledPipelines = await db.pipeline.findMany({
+    where: {
+      status: 'pending',
+      startedAt: { lte: new Date(Date.now() - THIRTY_MIN_MS) },
+    },
+    include: {
+      project: { select: { id: true, name: true, ownerAgentId: true, repoUrl: true } },
+    },
+  });
+
+  for (const pipeline of stalledPipelines) {
+    const agentId = pipeline.project?.ownerAgentId;
+    if (!agentId) continue;
+
+    const repoUrl = pipeline.project?.repoUrl;
+    if (!repoUrl) continue;
+
+    const recentRetries = await db.recoveryLog.count({
+      where: {
+        trigger: 'stalled_ci',
+        agentId,
+        createdAt: { gte: new Date(Date.now() - TWENTY_FOUR_HOURS_MS) },
+        details: { path: ['pipelineId'], equals: pipeline.id },
+      },
+    });
+
+    if (recentRetries >= 1) {
+      await db.escalation.create({
+        data: {
+          fromAgentId: agentId,
+          severity: 'critical',
+          category: 'pipeline',
+          title: `Pipeline ${pipeline.project?.name ?? pipeline.id}: CI stalled after recovery attempt`,
+          description: 'Max CI recovery retries (1/24h) exceeded. Manual intervention required.',
+        },
+      });
+
+      results.push({
+        agentId,
+        trigger: 'stalled_ci',
+        action: 'cancel_and_retrigger',
+        outcome: 'skipped',
+        details: { reason: 'max_retries_exceeded', pipelineId: pipeline.id },
+      });
+      continue;
+    }
+
+    const repoMatch = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!repoMatch) continue;
+    const [, owner, repo] = repoMatch;
+
+    try {
+      const { cancelWorkflowRuns, retriggerWorkflow } = await import('./github-actions');
+      await cancelWorkflowRuns(githubToken, owner, repo);
+      await retriggerWorkflow(githubToken, owner, repo);
+
+      await db.pipeline.update({
+        where: { id: pipeline.id },
+        data: { startedAt: new Date() },
+      });
+
+      await db.recoveryLog.create({
+        data: {
+          agentId,
+          trigger: 'stalled_ci',
+          action: 'cancel_and_retrigger',
+          outcome: 'success',
+          details: {
+            pipelineId: pipeline.id,
+            projectName: pipeline.project?.name,
+            repo: `${owner}/${repo}`,
+          },
+        },
+      });
+
+      results.push({
+        agentId,
+        trigger: 'stalled_ci',
+        action: 'cancel_and_retrigger',
+        outcome: 'success',
+        details: { pipelineId: pipeline.id, repo: `${owner}/${repo}` },
+      });
+    } catch (err) {
+      results.push({
+        agentId,
+        trigger: 'stalled_ci',
+        action: 'cancel_and_retrigger',
+        outcome: 'failed',
+        details: { error: err instanceof Error ? err.message : String(err), pipelineId: pipeline.id },
       });
     }
   }
