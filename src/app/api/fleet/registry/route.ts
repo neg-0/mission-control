@@ -27,6 +27,8 @@ import { formatZodError } from '@/lib/schemas';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 // =============================================================================
 // Validation Schemas
 // =============================================================================

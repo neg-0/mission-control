@@ -20,6 +20,8 @@ import {
   refreshEmbeddings,
 } from '@/lib/knowledge-engine';
 
+export const dynamic = 'force-dynamic';
+
 // =============================================================================
 // POST — Run propagation cycle
 // =============================================================================

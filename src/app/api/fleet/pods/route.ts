@@ -29,6 +29,8 @@ import {
 import { generateManifest } from '@/lib/project-manifest';
 import { formatZodError } from '@/lib/schemas';
 
+export const dynamic = 'force-dynamic';
+
 // =============================================================================
 // Validation Schemas
 // =============================================================================

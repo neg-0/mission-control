@@ -2,7 +2,7 @@
 
 import { Search, ChevronDown, AlertCircle, Heart, Activity, FileText, Zap, MoreVertical } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { GoalsPanel } from '../../components/GoalsPanel';
 import { ScheduleManager } from '../../components/ScheduleManager';
@@ -83,6 +83,14 @@ function getHealthDot(health: string): string {
 // ─── Fleet Page ─────────────────────────────────────────────────────
 
 export default function FleetPage() {
+  return (
+    <Suspense>
+      <FleetContent />
+    </Suspense>
+  );
+}
+
+function FleetContent() {
   const searchParams = useSearchParams();
   const { dashboardData, workspaces } = useDashboard();
 

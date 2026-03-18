@@ -23,6 +23,8 @@ import { z } from 'zod';
 import { semanticSearch } from '@/lib/knowledge-engine';
 import { formatZodError } from '@/lib/schemas';
 
+export const dynamic = 'force-dynamic';
+
 const SearchSchema = z.object({
   query: z.string().min(1).max(2000),
   limit: z.number().int().min(1).max(50).default(10),

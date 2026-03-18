@@ -1,11 +1,20 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { IdeasKanban } from '../../components/IdeasKanban';
 import { IdeaDetail } from '../../components/IdeaDetail';
 import { useSearchParams } from 'next/navigation';
 
 export default function FactoryPage() {
+  return (
+    <Suspense>
+      <FactoryContent />
+    </Suspense>
+  );
+}
+
+function FactoryContent() {
   const { dashboardData } = useDashboard();
   const searchParams = useSearchParams();
   const ideaId = searchParams.get('idea');

@@ -14,6 +14,8 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { formatZodError } from '@/lib/schemas';
 
+export const dynamic = 'force-dynamic';
+
 // =============================================================================
 // Validation
 // =============================================================================

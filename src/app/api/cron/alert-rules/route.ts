@@ -20,6 +20,8 @@
 import { prisma } from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 const HOURS = (n: number) => n * 60 * 60 * 1000;
 
 interface RuleResult {

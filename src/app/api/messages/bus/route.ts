@@ -23,6 +23,8 @@ import type { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 // =============================================================================
 // Validation Schemas
 // =============================================================================
