@@ -143,6 +143,15 @@ export const UpdateOrchestratorConfigSchema = z
     mdInjections: z.array(z.string()).optional(),
     /** Enable/disable the orchestrator globally */
     enabled: z.boolean().optional(),
+    /** Per-tier model config: { heartbeat: { provider, model, ... }, standard: {...}, strategic: {...} } */
+    modelTiers: z.record(z.string(), z.object({
+      provider: z.string(),
+      model: z.string(),
+      fallbackProvider: z.string().optional(),
+      fallbackModel: z.string().optional(),
+      maxTokens: z.number().int().positive().optional(),
+      temperature: z.number().min(0).max(2).optional(),
+    })).nullable().optional(),
   })
   .refine(
     (data) => Object.values(data).some((v) => v !== undefined),
