@@ -61,19 +61,19 @@ const SendMessageSchema = z.object({
   replyTo: z.string().uuid().optional(),
 });
 
-type SendMessageInput = z.infer<typeof SendMessageSchema>;
+type _SendMessageInput = z.infer<typeof SendMessageSchema>;
 
 /**
  * Schema for querying the message queue.
  */
-const QueryQueueSchema = z.object({
+const _QueryQueueSchema = z.object({
   agentId: z.string().min(1, 'agentId is required'),
   channel: z.string().optional(),
   status: z.string().optional(),
   limit: z.number().int().min(1).max(100).default(20),
 });
 
-type QueryQueueInput = z.infer<typeof QueryQueueSchema>;
+type _QueryQueueInput = z.infer<typeof _QueryQueueSchema>;
 
 /**
  * Schema for updating message status.
@@ -83,7 +83,7 @@ const UpdateMessageStatusSchema = z.object({
   status: z.enum(['ack', 'delivered', 'failed']),
 });
 
-type UpdateMessageStatusInput = z.infer<typeof UpdateMessageStatusSchema>;
+type _UpdateMessageStatusInput = z.infer<typeof UpdateMessageStatusSchema>;
 
 // =============================================================================
 // POST /api/messages/bus — Send a routed message

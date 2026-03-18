@@ -2,9 +2,8 @@
  * API Integration Tests: Alert Snooze + Metrics
  */
 import { resetDatabase, disconnectTestDb } from '../helpers/test-db';
-import { createTestCarPlayAlert, createTestEscalation } from '../helpers/factories';
+import { createTestCarPlayAlert } from '../helpers/factories';
 import { createTestRequest, parseResponse } from '../helpers/api-test-utils';
-import { testPrisma } from '../helpers/test-db';
 import { POST as postSnooze } from '@/app/api/alerts/snooze/route';
 import { GET as getMetrics } from '@/app/api/alerts/metrics/route';
 

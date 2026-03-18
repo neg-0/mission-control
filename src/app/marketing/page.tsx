@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
 import { cn } from '../../lib/utils';
 import {

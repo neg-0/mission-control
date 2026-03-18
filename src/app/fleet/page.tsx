@@ -1,6 +1,6 @@
 'use client';
 
-import { Search, ChevronDown, AlertCircle, Heart, Activity, FileText, Zap, MoreVertical } from 'lucide-react';
+import { Search, ChevronDown, AlertCircle, Heart, Activity, FileText, Zap } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useDashboard } from '../../contexts/DashboardContext';
@@ -352,6 +352,7 @@ function FleetCommandGrid({
   latestJournals,
   onSelectAgent,
 }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agents: any[];
   latestJournals: Record<string, JournalEntry>;
   onSelectAgent: (agentId: string) => void;
@@ -388,12 +389,13 @@ function CommandCard({
   latestJournal,
   onSelect,
 }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   agent: any;
   latestJournal?: JournalEntry;
   onSelect: () => void;
 }) {
   const [isKicking, setIsKicking] = useState(false);
-  const [showActions, setShowActions] = useState(false);
+  const [_showActions, _setShowActions] = useState(false);
 
   const handleKick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -558,7 +560,8 @@ function CommandCard({
 
 // ─── Overview Tab Component ─────────────────────────────────────────
 
-function OverviewTab({ agent, workspaces }: { agent: any; workspaces: any[] }) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function OverviewTab({ agent, workspaces: _workspaces }: { agent: any; workspaces: any[] }) {
   return (
     <div className="space-y-4">
       {/* Stat Cards */}

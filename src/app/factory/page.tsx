@@ -31,12 +31,12 @@ function FactoryContent() {
     window.history.pushState({}, '', url.toString());
   };
 
-  const handleStageChange = async (ideaId: string, newStatus: string) => {
+  const handleStageChange = async (_ideaId: string, _newStatus: string) => {
     // Refresh dashboard data to reflect the status change
     try {
       const res = await fetch('/api/dashboard');
       if (res.ok) {
-        const data = await res.json();
+        const _data = await res.json();
         // The DashboardContext will be updated through its polling mechanism
         // This ensures consistency across the dashboard
       }

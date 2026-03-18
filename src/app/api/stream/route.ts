@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
         try {
           const payload = JSON.stringify({ type: eventType, data, ts: Date.now() });
           controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-        } catch (e) {
+        } catch (_e) {
           // Controller might be closed
           closed = true;
         }

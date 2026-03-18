@@ -5,7 +5,7 @@
  * waitlist signups, verdicts, and post-mortems.
  */
 import { resetDatabase, disconnectTestDb } from '../helpers/test-db';
-import { createTestIdea, createTestAgent } from '../helpers/factories';
+import { createTestIdea } from '../helpers/factories';
 import { createTestRequest, parseResponse } from '../helpers/api-test-utils';
 import { testPrisma } from '../helpers/test-db';
 

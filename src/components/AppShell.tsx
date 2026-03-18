@@ -2,9 +2,7 @@
 
 import {
   AlertTriangle,
-  BarChart3,
   Bot,
-  Flame,
   LayoutDashboard,
   Lightbulb,
   Megaphone,

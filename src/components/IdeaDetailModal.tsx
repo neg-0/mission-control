@@ -19,6 +19,7 @@ interface IdeaDetail {
   score: number | null;
   researchNotes: string | null;
   scorecards: Scorecard[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   refineryData: Record<string, any> | null;
   validationMetrics: Record<string, unknown> | null;
   project: { id: string; name: string; stage: string } | null;
@@ -94,7 +95,7 @@ export function IdeaDetailModal({ ideaId, onClose, onSpawnCeo }: IdeaDetailModal
     setActionLoading(action);
 
     try {
-      const res = await fetch('/api/kick', {
+      const _res = await fetch('/api/kick', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

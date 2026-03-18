@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
             { timeout: 10000 }
           );
           unresolvedComments = parseInt(comments.trim()) || 0;
-        } catch (e) {
+        } catch (_e) {
           // Ignore individual PR check failures
         }
 

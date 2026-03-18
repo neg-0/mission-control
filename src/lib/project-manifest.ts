@@ -211,6 +211,7 @@ export function validateManifest(manifest: ProjectManifest): ManifestValidationR
 
   // Recompute hash and verify
   const manifestWithoutHash: Omit<ProjectManifest, 'hash'> = { ...manifest };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (manifestWithoutHash as any).hash;
   const expectedHash = computeManifestHash(manifestWithoutHash);
 
@@ -231,7 +232,9 @@ export function validateManifest(manifest: ProjectManifest): ManifestValidationR
  */
 export interface ManifestDiff {
   field: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   current: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   expected: any;
 }
 
@@ -257,7 +260,9 @@ export function diffManifests(
   );
 
   for (const field of fieldsToCompare) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const currentValue = (current as any)[field];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const expectedValue = (expected as any)[field];
 
     // Deep comparison for arrays

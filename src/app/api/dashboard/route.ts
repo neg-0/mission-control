@@ -26,7 +26,7 @@ async function syncAgentsFromConfig() {
     for (const agent of agentList) {
       const role = agent.identity?.name || agent.name || 'Agent';
       const workspace = agent.workspace || '';
-      const emoji = agent.identity?.emoji || '🤖';
+      const _emoji = agent.identity?.emoji || '🤖';
 
       // Upsert agent to ensure they exist in DB
       // We only update static metadata here, not dynamic state (status/heartbeat)

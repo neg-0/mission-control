@@ -7,7 +7,7 @@
  * We test the DB-driven parts of the response.
  */
 import { resetDatabase, disconnectTestDb } from '../helpers/test-db';
-import { createTestAgent, createTestOrchestratorConfig } from '../helpers/factories';
+import { createTestAgent } from '../helpers/factories';
 import { parseResponse } from '../helpers/api-test-utils';
 import { GET } from '@/app/api/dashboard/route';
 

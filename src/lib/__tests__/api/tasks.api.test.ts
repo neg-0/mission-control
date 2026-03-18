@@ -129,7 +129,7 @@ describe('Tasks API', () => {
     it('recalculates goal progress when completing task', async () => {
       const agent = await createTestAgent();
       const goal = await createTestGoal({ ownerAgentId: agent.id });
-      const task1 = await createTestTask({ goalId: goal.id, status: 'done', completedAt: new Date() });
+      const _task1 = await createTestTask({ goalId: goal.id, status: 'done', completedAt: new Date() });
       const task2 = await createTestTask({ goalId: goal.id, status: 'todo' });
 
       // Complete the second task

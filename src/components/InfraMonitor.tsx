@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Database, Server, Cloud } from 'lucide-react';
+import { Database, Server } from 'lucide-react';
 
 interface Resource {
   id: string;
   name: string;
   status: string;
   project?: { name: string };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   meta: any;
 }
 
@@ -17,6 +18,7 @@ interface ResourceGroup {
   other: Resource[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ResourceCard({ resource, icon: Icon }: { resource: Resource, icon: any }) {
   const meta = resource.meta || {};
   // Try to parse meta if it's a string, otherwise use as is

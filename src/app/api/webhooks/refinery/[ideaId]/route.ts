@@ -39,6 +39,7 @@ export async function POST(
           metadata: metadata
         }
       });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (e.code === 'P2002') {
         // Unique constraint violation - already signed up. 

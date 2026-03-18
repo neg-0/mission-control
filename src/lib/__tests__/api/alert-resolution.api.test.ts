@@ -152,7 +152,7 @@ describe('Alert Auto-Resolution', () => {
       status: 'dismissed',
     });
 
-    const alert = await createTestCarPlayAlert({
+    await createTestCarPlayAlert({
       sourceType: 'escalation',
       sourceId: escalation.id,
     });

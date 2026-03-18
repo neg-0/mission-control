@@ -56,7 +56,7 @@ const RegisterPodSchema = z.object({
   runtimeMode: z.enum(['gateway', 'native']).default('gateway'),
 });
 
-type RegisterPodInput = z.infer<typeof RegisterPodSchema>;
+type _RegisterPodInput = z.infer<typeof RegisterPodSchema>;
 
 // =============================================================================
 // GET /api/fleet/registry — Get connected pods
@@ -91,7 +91,7 @@ type RegisterPodInput = z.infer<typeof RegisterPodSchema>;
  * }
  * ```
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     // Query all agents (they're the "pods" in the registry)
     const agents = await prisma.agent.findMany({

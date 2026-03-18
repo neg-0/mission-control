@@ -21,7 +21,17 @@ fi
 
 echo "=== [rebuild] Build succeeded. Starting mission-control service..."
 systemctl --user start mission-control
-sleep 2
 
 echo "=== [rebuild] Verifying service is running..."
-systemctl --user is-active mission-control && echo "=== [rebuild] ✓ Done!" || echo "=== [rebuild] ⚠ Service failed to start"
+for i in 1 2 3 4 5 6; do
+  sleep 2
+  STATUS=$(systemctl --user is-active mission-control 2>/dev/null || true)
+  if [ "$STATUS" = "active" ]; then
+    echo "=== [rebuild] ✓ Service is active! Done."
+    exit 0
+  fi
+  echo "=== [rebuild] Status: $STATUS (attempt $i/6)..."
+done
+
+echo "=== [rebuild] ⚠ Service did not become active within 12s. Check: pm2 logs mission-control"
+exit 1

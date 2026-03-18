@@ -60,7 +60,7 @@ function Column({ id, tasks }: { id: string, tasks: Task[] }) {
 
 export default function TaskBoard() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [_activeId, _setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/tasks').then(res => res.json()).then(setTasks);
@@ -71,6 +71,7 @@ export default function TaskBoard() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function handleDragEnd(event: any) {
     const { active, over } = event;
 

@@ -3,7 +3,6 @@ import {
   getDefaultTiers,
   resolveProviderConfigs,
   scheduleTypeToTier,
-  type ModelTier,
   type ModelTierMap,
 } from '../model-tiers';
 

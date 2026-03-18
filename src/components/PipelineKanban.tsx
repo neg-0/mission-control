@@ -39,7 +39,7 @@ export function PipelineKanban({ items, onSpawnCeo, onCardClick }: PipelineKanba
     items: items.filter((item) => col.statuses.includes(item.status)),
   }));
 
-  async function handleSpawnCeo(ideaId: string) {
+  async function _handleSpawnCeo(ideaId: string) {
     try {
       const res = await fetch('/api/kick', {
         method: 'POST',

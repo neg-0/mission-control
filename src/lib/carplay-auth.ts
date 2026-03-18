@@ -13,7 +13,7 @@
  * Tokens are HMAC-SHA256 signed JSON payloads (similar to JWT but zero-dep).
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 

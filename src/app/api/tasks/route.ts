@@ -44,6 +44,7 @@ export async function GET(request: Request) {
     const assigneeId = searchParams.get('assigneeId');
     const goalId = searchParams.get('goalId');
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = {};
     if (status) where.status = status;
     if (assigneeId) where.assigneeId = assigneeId;
@@ -105,6 +106,7 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     if (!body.id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any = {};
     if (body.status !== undefined) {
       data.status = body.status;

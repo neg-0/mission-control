@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
             },
             take: limit
         });
-    } catch (e) {
+    } catch (_e) {
         // Ignore if table missing
     }
 

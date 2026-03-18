@@ -888,6 +888,7 @@ describe('validateGoalBlock — additional coverage', () => {
   test('detects invalid emoji', () => {
     const block = parseGoalBlock(MINIMAL_GOAL);
     // Manually override emoji to test validation branch
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const invalidEmojiBlock = { ...block, statusEmoji: '🔵' as any };
     const errors = validateGoalBlock(invalidEmojiBlock);
     const emojiError = errors.find(e => e.field === 'statusEmoji' && e.severity === 'error');

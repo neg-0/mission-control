@@ -38,6 +38,7 @@ interface IdeaFull {
   validationDeadline?: string | null;
   validationTarget?: number | null;
   validationMetrics?: { signups?: number; traffic?: number; conversion?: string } | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   refineryData?: Record<string, any> | null;
   timeRemaining?: number | null;
   isExpired?: boolean;
@@ -607,6 +608,7 @@ export function IdeaDetail({ ideaId, onBack }: IdeaDetailProps) {
                   🎯 Outreach Targets
                 </h4>
                 <div className="flex flex-wrap gap-2">
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {idea.refineryData.outreach_targets.targets.map((t: any, i: number) => (
                     <a key={i} href={t.url} target="_blank" rel="noopener noreferrer"
                       className="text-xs bg-sky-500/10 text-sky-400 px-2 py-1 rounded border border-sky-500/20 hover:bg-sky-500/20 transition-colors">
@@ -624,6 +626,7 @@ export function IdeaDetail({ ideaId, onBack }: IdeaDetailProps) {
                   📜 Community Rules
                 </h4>
                 <div className="space-y-1.5">
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {idea.refineryData.subreddit_rules.map((rule: any, i: number) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold ${
@@ -654,6 +657,7 @@ export function IdeaDetail({ ideaId, onBack }: IdeaDetailProps) {
                 </h4>
                 {Array.isArray(idea.refineryData.outreach_drafts) ? (
                   <div className="space-y-4">
+                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {idea.refineryData.outreach_drafts.map((draft: any, i: number) => {
                       const channel = draft.channel || '';
                       const subreddit = channel.replace(/^(Reddit\s+)?r\//, '');
