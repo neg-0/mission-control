@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Lightbulb,
   Megaphone,
+  Menu,
   Rocket,
   Server,
   Settings,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import { useDashboard } from '../contexts/DashboardContext';
 import { CronHealth } from './CronHealth';
 import GatewayOfflineBanner from './GatewayOfflineBanner';
@@ -69,7 +71,7 @@ function StatusBar() {
   const overallColor = !gwOk ? 'led-red' : (!wsOk || !orchOk) ? 'led-yellow' : 'led-green';
 
   return (
-    <footer className="fixed bottom-0 left-0 right-0 glass-card rounded-none border-x-0 border-b-0 px-4 py-2 z-40">
+    <footer className="fixed bottom-0 left-0 right-0 glass-card rounded-none border-x-0 border-b-0 px-4 py-2 z-40 pb-safe">
       <div className="max-w-[1600px] mx-auto flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-3 flex-wrap">
           <div className={cn('w-2 h-2 led led-pulse shrink-0', overallColor)} />
@@ -106,6 +108,7 @@ function StatusBar() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { gatewayHealth, alerts, booting } = useDashboard();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const fireCount = alerts.filter(a => a.level === 'red').length;
 
@@ -134,8 +137,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="mesh-bg fixed inset-0 -z-10"><div className="mesh-bg-accent" /></div>
       <GatewayOfflineBanner {...gatewayHealth} />
 
+      {/* Mobile header */}
+      <header className="md:hidden fixed top-0 left-0 right-0 z-50 glass-card rounded-none border-x-0 border-t-0 px-4 h-14 flex items-center justify-between pt-safe">
+        <MissionControlLogo />
+        <button
+          onClick={() => setMobileNavOpen(true)}
+          className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+          aria-label="Open navigation"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      </header>
+
+      {/* Mobile backdrop */}
+      {mobileNavOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="fixed top-0 left-0 bottom-0 w-[200px] glass-card rounded-none border-l-0 border-t-0 border-b-0 z-50 flex flex-col">
+      <aside className={cn(
+        'fixed top-0 left-0 bottom-0 w-[200px] glass-card rounded-none border-l-0 border-t-0 border-b-0 z-50 flex flex-col transition-transform duration-300',
+        mobileNavOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      )}>
         {/* Logo */}
         <div className="px-4 py-4 border-b border-border/50">
           <MissionControlLogo />
@@ -149,6 +175,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setMobileNavOpen(false)}
                 className={cn(
                   'flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors mx-2 rounded-lg',
                   isActive
@@ -178,7 +205,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <div className="ml-[200px] pb-12">
+      <div className="md:ml-[200px] pb-12 pt-14 md:pt-0">
         {/* Top alert bar */}
         {alerts.some(a => a.level === 'red') && (
           <div className="mx-4 mt-4 glass-card px-4 py-3 flex items-center gap-3 glow-red text-red-200">

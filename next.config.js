@@ -1,4 +1,11 @@
 /** @type {import('next').NextConfig} */
+const withSerwist = require('@serwist/next').default({
+  swSrc: 'src/app/sw.ts',
+  swDest: 'public/sw.js',
+  disable: process.env.NODE_ENV !== 'production',
+  exclude: [/\/api\//],
+});
+
 const nextConfig = {
   experimental: {
     // Exclude ws from bundling - use Node.js native module (Next.js 14 syntax)
@@ -27,6 +34,6 @@ const nextConfig = {
     }
     return config;
   },
-}
-module.exports = nextConfig
+};
 
+module.exports = withSerwist(nextConfig);
