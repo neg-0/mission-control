@@ -31,6 +31,10 @@ model Agent {
   providerFallback String? // Fallback provider
   modelFallback   String?  // Fallback model
 
+  // Agent identity files (moved from disk to DB — issues #30, #31)
+  soulContent     String?  // Contents of SOUL.md
+  systemPrompt    String?  // System prompt for native-mode agents
+
   projects        Project[]
   goals           Goal[]
   metrics         Metric[]
@@ -285,22 +289,34 @@ model User {
 // -----------------------------------------------------------------------------
 
 model Schedule {
-  id              String    @id @default(uuid())
-  agentId         String
-  agent           Agent     @relation(fields: [agentId], references: [id])
-  type            String    @default("cron") // "heartbeat" or "cron"
-  name            String    // "Heartbeat", "Work Session", "Standup"
-  cronExpr        String?   // Cron expression OR...
-  intervalMs      Int?      // ...interval in ms (not both)
-  enabled         Boolean   @default(true)
-  priority        Int       @default(0) // Higher = wake first in queue
-  payload         String?   // Message to send when triggered
-  channel         String    @default("discord") // Delivery channel ("discord", "none", etc.)
-  deliverTo       String?   // Delivery target within channel (e.g. "user:339585248826228749")
-  lastRunAt       DateTime?
-  nextRunAt       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                String    @id @default(uuid())
+  agentId           String
+  agent             Agent     @relation(fields: [agentId], references: [id])
+  type              String    @default("cron") // "heartbeat" or "cron"
+  name              String    // "Heartbeat", "Work Session", "Standup"
+  cronExpr          String?   // Cron expression (scheduleKind=cron)
+  intervalMs        Int?      // Interval in ms (scheduleKind=every)
+  enabled           Boolean   @default(true)
+  priority          Int       @default(0) // Higher = wake first in queue
+  payload           String?   // JSON-serialized CronPayload object
+  channel           String    @default("discord") // Delivery channel ("discord", "none", etc.)
+  deliverTo         String?   // Delivery target within channel (e.g. "user:339585248826228749")
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // OpenClaw schedule fields
+  scheduleKind      String    @default("cron") // "cron" | "at" | "every"
+  scheduleAt        String?   // ISO date string for kind=at
+  tz                String?   // Timezone for cron expressions
+  anchorMs          BigInt?   // Anchor epoch ms for kind=every
+  sessionTarget     String?   // Session to target (e.g. "main")
+  wakeMode          String?   // Wake mode (e.g. "next-heartbeat")
+  deleteAfterRun    Boolean   @default(false)
+  lastStatus        String?   // Last run status
+  lastDurationMs    Int?      // Last run duration in ms
+  consecutiveErrors Int       @default(0)
 
   @@index([enabled, nextRunAt])
   @@index([type])
@@ -467,8 +483,23 @@ model AgentSession {
   startedAt   DateTime  @default(now())
   completedAt DateTime?
 
+  messages    AgentMessage[]
+
   @@index([agentId, startedAt])
   @@index([status])
+}
+
+model AgentMessage {
+  id        String       @id @default(uuid())
+  sessionId String       @map("session_id")
+  role      String       // 'user', 'assistant', 'system', 'tool'
+  content   String?
+  metadata  Json?        // toolCalls, toolCallId, name fields
+  createdAt DateTime     @default(now()) @map("created_at")
+  session   AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("agent_messages")
+  @@index([sessionId, createdAt])
 }
 
 // -----------------------------------------------------------------------------

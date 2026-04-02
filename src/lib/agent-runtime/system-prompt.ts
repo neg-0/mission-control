@@ -7,6 +7,7 @@
 
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Load a workspace markdown file, returning empty string if not found.
@@ -20,16 +21,77 @@ async function loadWorkspaceFile(workspacePath: string, filename: string): Promi
 }
 
 /**
+ * Load SOUL.md content for a native-mode agent.
+ * Prefers Agent.soulContent from DB; falls back to filesystem with a deprecation warning.
+ */
+async function loadSoulContent(agentId: string, workspacePath: string): Promise<string> {
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    select: { soulContent: true },
+  });
+
+  if (agent?.soulContent) {
+    return agent.soulContent;
+  }
+
+  // Filesystem fallback
+  const content = await loadWorkspaceFile(workspacePath, 'SOUL.md');
+  if (content) {
+    console.warn(
+      `[DEPRECATION] Agent "${agentId}" soulContent loaded from filesystem. ` +
+        `Migrate SOUL.md content to Agent.soulContent in the database.`
+    );
+  }
+  return content;
+}
+
+/**
+ * Load system prompt for a native-mode agent.
+ * Prefers Agent.systemPrompt from DB; falls back to building from workspace files.
+ */
+async function loadSystemPromptFromDb(agentId: string): Promise<string | null> {
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    select: { systemPrompt: true },
+  });
+
+  return agent?.systemPrompt ?? null;
+}
+
+/**
  * Build the full system prompt for an agent.
  * @param workspacePath - Path to the agent's workspace directory
  * @param mcContext - Context string from buildHeartbeatContext()
+ * @param agentId - Optional agent ID; when provided, prefers DB columns over filesystem
  */
 export async function buildSystemPrompt(
   workspacePath: string,
   mcContext?: string,
+  agentId?: string,
 ): Promise<string> {
+  // If agentId provided and DB has a stored systemPrompt, use it directly
+  if (agentId) {
+    const stored = await loadSystemPromptFromDb(agentId);
+    if (stored) {
+      const sections: string[] = [stored];
+      if (mcContext) {
+        sections.push(`\n---\n## Current Context\n\n${mcContext}`);
+      }
+      return sections.join('\n');
+    }
+    console.warn(
+      `[DEPRECATION] Agent "${agentId}" systemPrompt loaded from filesystem. ` +
+        `Migrate system prompt content to Agent.systemPrompt in the database.`
+    );
+  }
+
+  // Build from workspace files (soul from DB if agentId known, otherwise filesystem)
+  const soulPromise = agentId
+    ? loadSoulContent(agentId, workspacePath)
+    : loadWorkspaceFile(workspacePath, 'SOUL.md');
+
   const [soul, identity, heartbeat, user, tools] = await Promise.all([
-    loadWorkspaceFile(workspacePath, 'SOUL.md'),
+    soulPromise,
     loadWorkspaceFile(workspacePath, 'IDENTITY.md'),
     loadWorkspaceFile(workspacePath, 'HEARTBEAT.md'),
     loadWorkspaceFile(workspacePath, 'USER.md'),

@@ -1143,7 +1143,7 @@ function MissionControlInner() {
                               <FileBrowser
                                 className="h-[500px]"
                                 initialFile={searchSelectedFile}
-                                workspace={selectedAgentWorkspace?.path || '/home/neg0/.openclaw'}
+                                workspace={selectedAgentWorkspace?.path || ''}
                                 highlightQuery={highlightQuery}
                               />
                             )}

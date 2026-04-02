@@ -4,7 +4,7 @@
 
 ### Source
 
-`GOALS.md` in each workspace root (e.g. `/home/neg0/.openclaw/workspace-rocket/GOALS.md`)
+`GOALS.md` in each workspace root (e.g. `$OPENCLAW_HOME/workspace-rocket/GOALS.md`)
 
 ### Expected Format
 

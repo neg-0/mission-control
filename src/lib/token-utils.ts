@@ -37,8 +37,7 @@
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 
-const OPENCLAW_DIR = '/home/neg0/.openclaw';
-const OPENCLAW_CONFIG = path.join(OPENCLAW_DIR, 'openclaw.json');
+import { getOpenClawConfigPath } from './config';
 const MC_ENV_PATH = path.join(process.cwd(), '.env');
 
 const RAILWAY_GQL_ENDPOINT = 'https://backboard.railway.com/graphql/v2';
@@ -156,7 +155,7 @@ interface OpenClawAgent {
  * Read openclaw.json and return the list of agent workspace paths.
  */
 export async function getAgentWorkspaces(): Promise<string[]> {
-  const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+  const raw = await readFile(getOpenClawConfigPath(), 'utf-8');
   const config = JSON.parse(raw);
   const agents: OpenClawAgent[] = config?.agents?.list ?? [];
   return agents.map((a) => a.workspace).filter(Boolean);
@@ -166,7 +165,7 @@ export async function getAgentWorkspaces(): Promise<string[]> {
  * Read openclaw.json and return agent id → workspace path mapping.
  */
 export async function getAgentWorkspaceMap(): Promise<Map<string, string>> {
-  const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+  const raw = await readFile(getOpenClawConfigPath(), 'utf-8');
   const config = JSON.parse(raw);
   const agents: OpenClawAgent[] = config?.agents?.list ?? [];
   const map = new Map<string, string>();

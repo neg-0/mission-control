@@ -171,5 +171,5 @@ The existing MC dashboard expands to show all pods:
 ---
 
 *See also:*
-- [infrastructure-scaling.md](file:///home/neg0/mission-control/docs/infrastructure-scaling.md) — VPS vs Railway, cost modeling
-- [ai-drift-prevention.md](file:///home/neg0/mission-control/docs/ai-drift-prevention.md) — Immutable configs, guardrails
+- [infrastructure-scaling.md](./infrastructure-scaling.md) — VPS vs Railway, cost modeling
+- [ai-drift-prevention.md](./ai-drift-prevention.md) — Immutable configs, guardrails

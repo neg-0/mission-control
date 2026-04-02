@@ -2,7 +2,7 @@ import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
 import path from 'path';
 
-const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
+import { getOpenClawConfigPath } from '@/lib/config';
 
 interface AgentConfig {
   agentId: string;
@@ -40,7 +40,7 @@ async function loadConfig(): Promise<{
     return configCache;
   }
   try {
-    const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+    const raw = await readFile(getOpenClawConfigPath(), 'utf-8');
     const cfg = JSON.parse(raw);
 
     // Parse agents

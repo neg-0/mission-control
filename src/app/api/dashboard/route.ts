@@ -1,10 +1,9 @@
 import { AgentCostSummary, calculateBurnRate } from '@/lib/burn-rate';
+import { getOpenClawConfigPath } from '@/lib/config';
 import { calculateDriftScore } from '@/lib/drift-score';
 import { prisma } from '@/lib/prisma';
 import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
-
-const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
 
 // Helper to map status icons
 function mapStatusToIcon(status: string): string {
@@ -19,7 +18,7 @@ function mapStatusToIcon(status: string): string {
 
 async function syncAgentsFromConfig() {
   try {
-    const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+    const raw = await readFile(getOpenClawConfigPath(), 'utf-8');
     const cfg = JSON.parse(raw);
     const agentList = cfg?.agents?.list || [];
 
@@ -249,19 +248,17 @@ export async function GET() {
       status: burnRate.mrr >= m.mrr ? '🟢' : '⚪',
     }));
 
-    // Cron health — read from jobs.json
+    // Cron health — read from Schedule table
     const cron = { total: 0, ok: 0, errors: [] as string[] };
     try {
-      const jobsRaw = await readFile('/home/neg0/.openclaw/cron/jobs.json', 'utf-8');
-      const jobsData = JSON.parse(jobsRaw);
-      const jobs = jobsData.jobs || [];
-      cron.total = jobs.length;
-      cron.ok = jobs.filter((j: { enabled: boolean }) => j.enabled).length;
-      cron.errors = jobs
-        .filter((j: { state?: { lastError?: string } }) => j.state?.lastError)
-        .map((j: { name: string; state: { lastError: string } }) => `${j.name}: ${j.state.lastError}`);
+      const schedules = await prisma.schedule.findMany({ select: { name: true, enabled: true, lastStatus: true } });
+      cron.total = schedules.length;
+      cron.ok = schedules.filter(s => s.enabled).length;
+      cron.errors = schedules
+        .filter(s => s.lastStatus && s.lastStatus !== 'ok')
+        .map(s => `${s.name}: ${s.lastStatus}`);
     } catch {
-      // No cron jobs file
+      // No schedules in DB yet
     }
 
     return NextResponse.json({
