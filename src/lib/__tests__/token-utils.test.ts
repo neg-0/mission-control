@@ -10,6 +10,12 @@ import { distributeTokenToAgents, getAgentWorkspaceMap, getAgentWorkspaces, upda
 // Mock fs/promises
 jest.mock('fs/promises');
 
+// Mock config so getOpenClawConfigPath doesn't require OPENCLAW_HOME in the test env
+jest.mock('@/lib/config', () => ({
+  getOpenClawHome: () => '/tmp/openclaw-test',
+  getOpenClawConfigPath: () => '/tmp/openclaw-test/openclaw.json',
+}));
+
 const mockedReadFile = readFile as jest.MockedFunction<typeof readFile>;
 const mockedWriteFile = writeFile as jest.MockedFunction<typeof writeFile>;
 
