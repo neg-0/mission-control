@@ -471,8 +471,23 @@ model AgentSession {
   startedAt   DateTime  @default(now())
   completedAt DateTime?
 
+  messages    AgentMessage[]
+
   @@index([agentId, startedAt])
   @@index([status])
+}
+
+model AgentMessage {
+  id        String       @id @default(uuid())
+  sessionId String       @map("session_id")
+  role      String       // 'user', 'assistant', 'system', 'tool'
+  content   String?
+  metadata  Json?        // toolCalls, toolCallId, name fields
+  createdAt DateTime     @default(now()) @map("created_at")
+  session   AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("agent_messages")
+  @@index([sessionId, createdAt])
 }
 
 // -----------------------------------------------------------------------------

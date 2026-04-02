@@ -1,91 +1,119 @@
 /**
  * @module session-store
  * @description
- * Session persistence using JSONL files. Each message in a conversation
- * is appended as a single JSON line, making sessions append-only and
- * compatible with OpenClaw's session format.
+ * Session persistence backed by Postgres via Prisma. Each message in a
+ * conversation is stored as a row in agent_messages, linked to an AgentSession.
+ *
+ * The workspacePath parameter is retained in all signatures for backwards
+ * compatibility but is no longer used for storage.
  */
 
-import { existsSync } from 'fs';
-import { appendFile, mkdir, readFile, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import { prisma } from '../prisma';
 import type { ChatMessage } from './providers';
 
-const SESSION_DIR = 'sessions';
+// =============================================================================
+// Internal helpers
+// =============================================================================
 
-function sessionPath(workspacePath: string, sessionId: string): string {
-  return join(workspacePath, SESSION_DIR, `${sessionId}.jsonl`);
+function messageToData(
+  sessionId: string,
+  msg: ChatMessage,
+): { sessionId: string; role: string; content: string | null; metadata: object | null } {
+  const { role, content, ...rest } = msg;
+  return {
+    sessionId,
+    role,
+    content: content ?? null,
+    metadata: Object.keys(rest).length > 0 ? (rest as object) : null,
+  };
 }
 
+function recordToMessage(record: {
+  role: string;
+  content: string | null;
+  metadata: unknown;
+}): ChatMessage {
+  const meta = (record.metadata ?? {}) as Record<string, unknown>;
+  return { role: record.role, content: record.content, ...meta } as ChatMessage;
+}
+
+// =============================================================================
+// Public API
+// =============================================================================
+
 /**
- * Load all messages from a session JSONL file.
+ * Load all messages for a session, ordered by insertion time.
  */
 export async function loadSession(
-  workspacePath: string,
+  _workspacePath: string,
   sessionId: string,
 ): Promise<ChatMessage[]> {
-  const path = sessionPath(workspacePath, sessionId);
-  if (!existsSync(path)) return [];
-
   try {
-    const content = await readFile(path, 'utf-8');
-    const messages: ChatMessage[] = [];
-    for (const line of content.split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        messages.push(JSON.parse(line) as ChatMessage);
-      } catch {
-        // Skip malformed lines
-      }
-    }
-    return messages;
-  } catch {
+    const rows = await prisma.agentMessage.findMany({
+      where: { sessionId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(recordToMessage);
+  } catch (err) {
+    console.warn('[session-store] loadSession failed:', err);
     return [];
   }
 }
 
 /**
- * Append a message to a session JSONL file.
+ * Persist a single message to the session.
  */
 export async function saveMessage(
-  workspacePath: string,
+  _workspacePath: string,
   sessionId: string,
   message: ChatMessage,
 ): Promise<void> {
-  const path = sessionPath(workspacePath, sessionId);
-  const dir = dirname(path);
-  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-  await appendFile(path, JSON.stringify(message) + '\n', 'utf-8');
+  try {
+    await prisma.agentMessage.create({ data: messageToData(sessionId, message) });
+  } catch (err) {
+    console.warn('[session-store] saveMessage failed:', err);
+  }
 }
 
 /**
- * Save multiple messages to a session.
+ * Persist multiple messages to the session in one batch.
  */
 export async function saveMessages(
-  workspacePath: string,
+  _workspacePath: string,
   sessionId: string,
   messages: ChatMessage[],
 ): Promise<void> {
-  const path = sessionPath(workspacePath, sessionId);
-  const dir = dirname(path);
-  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-  const content = messages.map((m) => JSON.stringify(m)).join('\n') + '\n';
-  await appendFile(path, content, 'utf-8');
+  if (messages.length === 0) return;
+  try {
+    await prisma.agentMessage.createMany({
+      data: messages.map((m) => messageToData(sessionId, m)),
+    });
+  } catch (err) {
+    console.warn('[session-store] saveMessages failed:', err);
+  }
 }
 
 /**
  * Replace session content entirely (used after compaction).
+ * Deletes all existing messages then inserts the new set atomically.
  */
 export async function replaceSession(
-  workspacePath: string,
+  _workspacePath: string,
   sessionId: string,
   messages: ChatMessage[],
 ): Promise<void> {
-  const path = sessionPath(workspacePath, sessionId);
-  const dir = dirname(path);
-  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-  const content = messages.map((m) => JSON.stringify(m)).join('\n') + '\n';
-  await writeFile(path, content, 'utf-8');
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.agentMessage.deleteMany({ where: { sessionId } });
+      if (messages.length > 0) {
+        await tx.agentMessage.createMany({
+          data: messages.map((m) => messageToData(sessionId, m)),
+        });
+      }
+    });
+  } catch (err) {
+    console.warn('[session-store] replaceSession failed:', err);
+  }
 }
 
 /**
