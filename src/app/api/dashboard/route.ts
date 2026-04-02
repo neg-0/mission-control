@@ -1,10 +1,9 @@
 import { AgentCostSummary, calculateBurnRate } from '@/lib/burn-rate';
-import { getOpenClawConfigPath, getOpenClawHome } from '@/lib/config';
+import { getOpenClawConfigPath } from '@/lib/config';
 import { calculateDriftScore } from '@/lib/drift-score';
 import { prisma } from '@/lib/prisma';
 import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
-import path from 'path';
 
 // Helper to map status icons
 function mapStatusToIcon(status: string): string {
@@ -249,19 +248,17 @@ export async function GET() {
       status: burnRate.mrr >= m.mrr ? '🟢' : '⚪',
     }));
 
-    // Cron health — read from jobs.json
+    // Cron health — read from Schedule table
     const cron = { total: 0, ok: 0, errors: [] as string[] };
     try {
-      const jobsRaw = await readFile(path.join(getOpenClawHome(), 'cron', 'jobs.json'), 'utf-8');
-      const jobsData = JSON.parse(jobsRaw);
-      const jobs = jobsData.jobs || [];
-      cron.total = jobs.length;
-      cron.ok = jobs.filter((j: { enabled: boolean }) => j.enabled).length;
-      cron.errors = jobs
-        .filter((j: { state?: { lastError?: string } }) => j.state?.lastError)
-        .map((j: { name: string; state: { lastError: string } }) => `${j.name}: ${j.state.lastError}`);
+      const schedules = await prisma.schedule.findMany({ select: { name: true, enabled: true, lastStatus: true } });
+      cron.total = schedules.length;
+      cron.ok = schedules.filter(s => s.enabled).length;
+      cron.errors = schedules
+        .filter(s => s.lastStatus && s.lastStatus !== 'ok')
+        .map(s => `${s.name}: ${s.lastStatus}`);
     } catch {
-      // No cron jobs file
+      // No schedules in DB yet
     }
 
     return NextResponse.json({
