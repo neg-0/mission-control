@@ -4,7 +4,7 @@
  */
 
 import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { join, resolve } from 'path';
 
 // Load .env manually (dotenv may not be available via npx tsx)
 const envPath = resolve(import.meta.dirname || __dirname, '..', '.env');
@@ -19,9 +19,12 @@ try {
 import { runAgentLoop } from '../src/lib/agent-runtime/agent-loop.js';
 
 async function main() {
+  const openclawHome = process.env.OPENCLAW_HOME;
+  if (!openclawHome) throw new Error('OPENCLAW_HOME environment variable is not set');
+
   const config = {
     agentId: 'test-native',
-    workspacePath: '/home/neg0/.openclaw/workspace-test-native',
+    workspacePath: join(openclawHome, 'workspace-test-native'),
     providerPrimary: 'gemini',
     modelPrimary: 'gemini-2.5-flash',
     maxIterations: 3,

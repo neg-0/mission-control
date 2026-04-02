@@ -38,7 +38,9 @@ interface CronJob {
 }
 
 async function main() {
-  const cronPath = path.resolve('/home/neg0/.openclaw/cron/jobs.json');
+  const openclawHome = process.env.OPENCLAW_HOME;
+  if (!openclawHome) throw new Error('OPENCLAW_HOME environment variable is not set');
+  const cronPath = path.join(openclawHome, 'cron', 'jobs.json');
   const raw = fs.readFileSync(cronPath, 'utf-8');
   const data = JSON.parse(raw);
   const jobs: CronJob[] = data.jobs || [];

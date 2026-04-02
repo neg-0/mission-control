@@ -1,13 +1,15 @@
 import { readFile, readdir } from 'fs/promises';
 import { NextResponse } from 'next/server';
+import path from 'path';
 
-const IDEAS_DIR = '/home/neg0/.openclaw/workspace-rocket/projects/ideas';
+import { getOpenClawHome } from '@/lib/config';
 
 export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
 ) {
   const ideaId = params.id; // e.g. "IDEA-001"
+  const IDEAS_DIR = path.join(getOpenClawHome(), 'workspace-rocket', 'projects', 'ideas');
 
   try {
     // Find the directory matching the idea ID

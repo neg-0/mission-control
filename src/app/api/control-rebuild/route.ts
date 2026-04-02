@@ -1,13 +1,19 @@
 import { exec } from 'child_process';
 import { readFile } from 'fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
+import path from 'path';
+
+import { getOpenClawHome } from '@/lib/config';
 
 export const runtime = 'nodejs';
 
-const REBUILD_SCRIPT = '/home/neg0/.openclaw/workspace-rocket/projects/mission-control/scripts/control-rebuild.sh';
 const REBUILD_LOG = '/tmp/mission-control-rebuild.log';
 
 export async function POST(req: NextRequest) {
+  const REBUILD_SCRIPT = path.join(
+    getOpenClawHome(),
+    'workspace-rocket', 'projects', 'mission-control', 'scripts', 'control-rebuild.sh'
+  );
   try {
     const body = await req.json().catch(() => ({}));
     const action: string = body?.action;

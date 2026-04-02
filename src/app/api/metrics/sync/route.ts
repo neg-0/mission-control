@@ -12,10 +12,11 @@ import { readFile, readdir } from 'fs/promises';
 import { NextResponse } from 'next/server';
 import { join } from 'path';
 
-const OPENCLAW_ROOT = '/home/neg0/.openclaw';
+import { getOpenClawHome } from '@/lib/config';
 
 export async function POST() {
   try {
+    const OPENCLAW_ROOT = getOpenClawHome();
     const entries = await readdir(OPENCLAW_ROOT);
     const workspaceDirs = entries.filter(e => e.startsWith('workspace-'));
 

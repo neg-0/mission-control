@@ -15,6 +15,8 @@ import { prisma } from '@/lib/prisma';
 import { readFile, readdir } from 'fs/promises';
 import { join } from 'path';
 
+import { getOpenClawHome } from './config';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -48,12 +50,6 @@ export interface BurnRateResult {
   runway: number | null;  // Months of runway (null = infinite / MRR > burn)
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const OPENCLAW_ROOT = '/home/neg0/.openclaw';
-
 // Default fixed costs to seed when the CostEntry table is empty.
 // These are initial values — edit via Mission Control UI or directly in DB.
 export const DEFAULT_FIXED_COSTS: Array<{
@@ -77,6 +73,7 @@ export const DEFAULT_FIXED_COSTS: Array<{
 
 async function readAgentStats(): Promise<AgentCostSummary[]> {
   const results: AgentCostSummary[] = [];
+  const OPENCLAW_ROOT = getOpenClawHome();
 
   try {
     const entries = await readdir(OPENCLAW_ROOT);

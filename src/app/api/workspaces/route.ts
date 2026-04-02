@@ -1,6 +1,8 @@
 import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
 
+import { getOpenClawConfigPath } from '@/lib/config';
+
 export interface Workspace {
   id: string;
   label: string;
@@ -8,8 +10,6 @@ export interface Workspace {
   model?: string;
   emoji?: string;
 }
-
-const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
 
 // Cache with TTL to avoid reading the file on every request
 let cache: { workspaces: Workspace[]; ts: number } | null = null;
@@ -20,7 +20,7 @@ async function loadWorkspaces(): Promise<Workspace[]> {
     return cache.workspaces;
   }
   try {
-    const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+    const raw = await readFile(getOpenClawConfigPath(), 'utf-8');
     const cfg = JSON.parse(raw);
     const agentList: Array<{
       id: string;

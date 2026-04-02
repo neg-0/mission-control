@@ -207,5 +207,5 @@ Within 60 seconds, all 100+ CEOs wake up with the updated skill, with zero manua
 ---
 
 *See also:*
-- [fleet-architecture.md](file:///home/neg0/mission-control/docs/fleet-architecture.md) — CEO pod model
-- [ai-drift-prevention.md](file:///home/neg0/mission-control/docs/ai-drift-prevention.md) — Keeping agents from wrecking infra
+- [fleet-architecture.md](./fleet-architecture.md) — CEO pod model
+- [ai-drift-prevention.md](./ai-drift-prevention.md) — Keeping agents from wrecking infra

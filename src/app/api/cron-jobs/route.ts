@@ -15,11 +15,11 @@ import { readFile, writeFile } from 'fs/promises';
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 
-const CRON_JOBS_PATH = path.join(
-  process.env.OPENCLAW_HOME || '/home/neg0/.openclaw',
-  'cron',
-  'jobs.json'
-);
+import { getOpenClawHome } from '@/lib/config';
+
+function getCronJobsPath() {
+  return path.join(getOpenClawHome(), 'cron', 'jobs.json');
+}
 
 // ---------------------------------------------------------------------------
 // Types matching OpenClaw's jobs.json schema
@@ -73,12 +73,12 @@ interface JobsFile {
 // ---------------------------------------------------------------------------
 
 async function readJobsFile(): Promise<JobsFile> {
-  const raw = await readFile(CRON_JOBS_PATH, 'utf-8');
+  const raw = await readFile(getCronJobsPath(), 'utf-8');
   return JSON.parse(raw);
 }
 
 async function writeJobsFile(data: JobsFile): Promise<void> {
-  await writeFile(CRON_JOBS_PATH, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+  await writeFile(getCronJobsPath(), JSON.stringify(data, null, 2) + '\n', 'utf-8');
 }
 
 

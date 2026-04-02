@@ -281,5 +281,5 @@ You already have this. Discord is the shared message bus. If a CEO needs somethi
 ---
 
 *See also:*
-- [fleet-architecture.md](file:///home/neg0/mission-control/docs/fleet-architecture.md) — CEO pod model
-- [infrastructure-scaling.md](file:///home/neg0/mission-control/docs/infrastructure-scaling.md) — VPS vs Railway, cost modeling
+- [fleet-architecture.md](./fleet-architecture.md) — CEO pod model
+- [infrastructure-scaling.md](./infrastructure-scaling.md) — VPS vs Railway, cost modeling

@@ -1,10 +1,10 @@
 import { AgentCostSummary, calculateBurnRate } from '@/lib/burn-rate';
+import { getOpenClawConfigPath, getOpenClawHome } from '@/lib/config';
 import { calculateDriftScore } from '@/lib/drift-score';
 import { prisma } from '@/lib/prisma';
 import { readFile } from 'fs/promises';
 import { NextResponse } from 'next/server';
-
-const OPENCLAW_CONFIG = '/home/neg0/.openclaw/openclaw.json';
+import path from 'path';
 
 // Helper to map status icons
 function mapStatusToIcon(status: string): string {
@@ -19,7 +19,7 @@ function mapStatusToIcon(status: string): string {
 
 async function syncAgentsFromConfig() {
   try {
-    const raw = await readFile(OPENCLAW_CONFIG, 'utf-8');
+    const raw = await readFile(getOpenClawConfigPath(), 'utf-8');
     const cfg = JSON.parse(raw);
     const agentList = cfg?.agents?.list || [];
 
@@ -252,7 +252,7 @@ export async function GET() {
     // Cron health — read from jobs.json
     const cron = { total: 0, ok: 0, errors: [] as string[] };
     try {
-      const jobsRaw = await readFile('/home/neg0/.openclaw/cron/jobs.json', 'utf-8');
+      const jobsRaw = await readFile(path.join(getOpenClawHome(), 'cron', 'jobs.json'), 'utf-8');
       const jobsData = JSON.parse(jobsRaw);
       const jobs = jobsData.jobs || [];
       cron.total = jobs.length;
