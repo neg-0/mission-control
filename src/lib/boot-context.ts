@@ -41,10 +41,47 @@ export interface BootContextValidationResult {
 }
 
 /**
+ * Load SOUL.md content for an agent.
+ * Prefers Agent.soulContent from DB; falls back to filesystem with a deprecation warning.
+ */
+export async function loadSoulContent(
+  agentId: string,
+  workspacePath: string
+): Promise<{ content: string | null; warnings: string[] }> {
+  const warnings: string[] = [];
+
+  // Prefer DB
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    select: { soulContent: true },
+  });
+
+  if (agent?.soulContent) {
+    return { content: agent.soulContent, warnings };
+  }
+
+  // Fallback to filesystem
+  const soulPath = workspacePath.endsWith('/')
+    ? `${workspacePath}SOUL.md`
+    : `${workspacePath}/SOUL.md`;
+
+  try {
+    const content = await fs.readFile(soulPath, 'utf-8');
+    warnings.push(
+      `[DEPRECATION] Agent "${agentId}" soulContent loaded from filesystem (${soulPath}). ` +
+        `Migrate SOUL.md content to Agent.soulContent in the database.`
+    );
+    return { content, warnings };
+  } catch {
+    return { content: null, warnings };
+  }
+}
+
+/**
  * Validate boot context
  *
  * - Checks each required file exists
- * - Validates SOUL.md contains critical sections
+ * - Validates SOUL.md contains critical sections (from DB or filesystem)
  * - If manifestPath is provided, reads and validates the manifest
  * - Returns validation result with errors and warnings
  */
@@ -70,15 +107,14 @@ export async function validateBootContext(
     }
   }
 
-  // Validate SOUL.md if it exists
-  const soulPath = config.workspacePath.endsWith('/')
-    ? `${config.workspacePath}SOUL.md`
-    : `${config.workspacePath}/SOUL.md`;
+  // Validate SOUL.md content (prefer DB, fall back to filesystem)
+  const { content: soulContent, warnings: soulWarnings } = await loadSoulContent(
+    config.agentId,
+    config.workspacePath
+  );
+  warnings.push(...soulWarnings);
 
-  try {
-    const soulContent = await fs.readFile(soulPath, 'utf-8');
-
-    // Check for critical sections
+  if (soulContent) {
     const criticalSections = [
       'Budget Limits',
       'Deploy Restrictions',
@@ -87,13 +123,13 @@ export async function validateBootContext(
 
     for (const section of criticalSections) {
       if (!soulContent.includes(section)) {
-        errors.push(
-          `SOUL.md missing critical section: "${section}"`
-        );
+        errors.push(`SOUL.md missing critical section: "${section}"`);
       }
     }
-  } catch {
-    errors.push(`Failed to read SOUL.md: ${soulPath}`);
+  } else {
+    errors.push(
+      `Failed to read SOUL.md for agent "${config.agentId}" (not in DB and not on filesystem)`
+    );
   }
 
   // Validate manifest if path provided

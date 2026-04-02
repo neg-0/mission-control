@@ -31,6 +31,10 @@ model Agent {
   providerFallback String? // Fallback provider
   modelFallback   String?  // Fallback model
 
+  // Agent identity files (moved from disk to DB — issues #30, #31)
+  soulContent     String?  // Contents of SOUL.md
+  systemPrompt    String?  // System prompt for native-mode agents
+
   projects        Project[]
   goals           Goal[]
   metrics         Metric[]

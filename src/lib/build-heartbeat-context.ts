@@ -18,6 +18,18 @@ interface ContextOptions {
 }
 
 /**
+ * Resolve SOUL.md content for a given agent.
+ * Returns DB content if available, otherwise returns null (caller falls back to filesystem fetch).
+ */
+async function resolveSoulFromDb(agentId: string): Promise<string | null> {
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    select: { soulContent: true },
+  });
+  return agent?.soulContent ?? null;
+}
+
+/**
  * Build a context-rich heartbeat message for a specific agent.
  */
 export async function buildHeartbeatContext(
@@ -33,6 +45,11 @@ export async function buildHeartbeatContext(
   const journalLimit = options?.journalEntries ?? config?.journalEntries ?? 5;
   const mdPaths: string[] = options?.mdInjections
     ?? (Array.isArray(config?.mdInjections) ? config.mdInjections as string[] : []);
+
+  // For SOUL.md injections, prefer the DB column (issue #30)
+  const soulFromDb = mdPaths.some((p) => p.endsWith('SOUL.md'))
+    ? await resolveSoulFromDb(agentId)
+    : null;
 
   // Parallel queries for all context data
   const [journal, oneOffTasks, standingTasks, goals, escalations, mdContents] = await Promise.all([
@@ -96,8 +113,8 @@ export async function buildHeartbeatContext(
       take: 5,
     }),
 
-    // Read markdown file injections
-    loadMarkdownInjections(mdPaths),
+    // Read markdown file injections (SOUL.md prefers DB content when available)
+    loadMarkdownInjections(mdPaths, soulFromDb),
   ]);
 
   // Build the message sections
@@ -206,9 +223,11 @@ export function estimateTokens(text: string): number {
 
 /**
  * Load contents of markdown files for injection.
+ * For SOUL.md paths, prefers soulFromDb when provided (issue #30).
  */
 async function loadMarkdownInjections(
-  paths: string[]
+  paths: string[],
+  soulFromDb: string | null = null,
 ): Promise<Array<{ path: string; content: string }>> {
   const results: Array<{ path: string; content: string }> = [];
   if (paths.length === 0) return results;
@@ -216,6 +235,15 @@ async function loadMarkdownInjections(
   const baseUrl = process.env.NEXT_PUBLIC_MC_URL || 'http://localhost:3000';
 
   for (const p of paths) {
+    // Prefer DB content for SOUL.md
+    if (p.endsWith('SOUL.md') && soulFromDb) {
+      const truncated = soulFromDb.length > 2000
+        ? soulFromDb.slice(0, 2000) + '\n... (truncated)'
+        : soulFromDb;
+      results.push({ path: p, content: truncated });
+      continue;
+    }
+
     try {
       const res = await fetch(`${baseUrl}/api/files/read?path=${encodeURIComponent(p)}`);
       if (!res.ok) {
